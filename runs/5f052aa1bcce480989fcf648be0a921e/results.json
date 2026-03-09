@@ -1,0 +1,35 @@
+{
+  "job_id": "5f052aa1bcce480989fcf648be0a921e",
+  "file_name": "wheat_20260219142949817.jpg",
+  "mm_per_px": 0.213317502,
+  "areas_px": {
+    "root": 14919,
+    "stem": 5941,
+    "leaf": 13408
+  },
+  "areas_mm2": {
+    "root": 678.8794970033789,
+    "stem": 270.34138291420834,
+    "leaf": 610.1224140908442
+  },
+  "lengths_px": {
+    "root": 729.6758710252535,
+    "stem": 373.40916292848976,
+    "leaf": 769.3797256769669
+  },
+  "lengths_mm": {
+    "root": 155.65263407678125,
+    "stem": 79.65470985981644,
+    "leaf": 164.12216117085583
+  },
+  "params": {
+    "grayscale": false,
+    "contrast": 1.0,
+    "brightness": 0,
+    "saturation": 1.0,
+    "blur": 0.0,
+    "conf": 0.1,
+    "connect_dist": 150.0,
+    "root_overlap": 0.6
+  }
+}

@@ -1,0 +1,35 @@
+{
+  "job_id": "032469ce76714827adfccb67df355899",
+  "file_name": "photo.jpg",
+  "mm_per_px": 0.213317502,
+  "areas_px": {
+    "root": 5577,
+    "stem": 340,
+    "leaf": 1116
+  },
+  "areas_mm2": {
+    "root": 253.77779709014305,
+    "stem": 15.471481264236802,
+    "leaf": 50.782862032024326
+  },
+  "lengths_px": {
+    "root": 840.8864350760148,
+    "stem": 47.45584412271571,
+    "leaf": 40.87005768508881
+  },
+  "lengths_mm": {
+    "root": 179.37579379610065,
+    "stem": 10.123162123559096,
+    "leaf": 8.718298611979048
+  },
+  "params": {
+    "grayscale": false,
+    "contrast": 1.0,
+    "brightness": 0,
+    "saturation": 1.0,
+    "blur": 0.0,
+    "conf": 0.1,
+    "connect_dist": 100.0,
+    "root_overlap": 0.6
+  }
+}

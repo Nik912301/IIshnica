@@ -1,0 +1,35 @@
+{
+  "job_id": "23848c081f0547cfb17b05d04cb0c7e3",
+  "file_name": "arugula_20260219162019445.jpg",
+  "mm_per_px": 0.213317502,
+  "areas_px": {
+    "root": 1630,
+    "stem": 1064,
+    "leaf": 2202
+  },
+  "areas_mm2": {
+    "root": 74.1721013550176,
+    "stem": 48.41663548572929,
+    "leaf": 100.20059336426304
+  },
+  "lengths_px": {
+    "root": 16.48528137423857,
+    "stem": 100.9827560572969,
+    "leaf": 51.526911934581186
+  },
+  "lengths_mm": {
+    "root": 3.516599042519699,
+    "stem": 21.54138926721794,
+    "leaf": 10.991592139658845
+  },
+  "params": {
+    "grayscale": false,
+    "contrast": 1.0,
+    "brightness": 0,
+    "saturation": 1.0,
+    "blur": 0.0,
+    "conf": 0.1,
+    "connect_dist": 100.0,
+    "root_overlap": 0.6
+  }
+}

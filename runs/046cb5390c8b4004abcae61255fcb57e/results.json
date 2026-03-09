@@ -1,0 +1,22 @@
+{
+  "job_id": "046cb5390c8b4004abcae61255fcb57e",
+  "file_name": "wheat_20260219142936201.jpg",
+  "mm_per_px": 0.213317502,
+  "areas_px": {
+    "root": 9294,
+    "stem": 5587,
+    "leaf": 12099
+  },
+  "areas_mm2": {
+    "root": 422.9174907935789,
+    "stem": 254.23284065673826,
+    "leaf": 550.5572112235325
+  },
+  "params": {
+    "grayscale": false,
+    "contrast": 1.0,
+    "brightness": 0,
+    "saturation": 1.0,
+    "blur": 0.0
+  }
+}
