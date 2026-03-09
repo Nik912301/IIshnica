@@ -177,7 +177,9 @@ def call_analyze_api(image_bytes: bytes, filename: str, params: dict) -> dict:
         "saturation": str(params["saturation"]),
         "blur": str(params["blur"]),
         "enhance_dark": "true",
-        "conf": "0.07",
+        "conf_root": "0.07",
+        "conf_stem": "0.07",
+        "conf_leaf": "0.07",
         "connect_dist": "100.0",
         "root_overlap": "0.6",
     }

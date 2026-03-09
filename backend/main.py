@@ -24,7 +24,10 @@ from ultralytics import YOLO
 BASE_DIR = Path(__file__).resolve().parent.parent
 DATA_DIR = BASE_DIR / "all_data"
 FRONTEND_DIR = BASE_DIR / "frontend"
-WEIGHTS_PATH = DATA_DIR / "yolo_weights" / "plants_optimized_seg" / "weights" / "best.pt"
+WEIGHTS_DIR = DATA_DIR / "yolo_weights" / "plants_optimized_seg" / "weights"
+# Поддержка best.pt и best_h.pt: при скачивании по ссылке из README можно сохранить как best_h.pt
+_candidates = [WEIGHTS_DIR / "best.pt", WEIGHTS_DIR / "best_h.pt"]
+WEIGHTS_PATH = next((p for p in _candidates if p.is_file()), WEIGHTS_DIR / "best.pt")
 RUNS_DIR = BASE_DIR / "runs"
 RUNS_DIR.mkdir(parents=True, exist_ok=True)
 CALIBRATION_FILE = BASE_DIR / "calibration.json"
@@ -285,9 +288,8 @@ if FRONTEND_DIR.is_dir():
 
 if not WEIGHTS_PATH.is_file():
     raise FileNotFoundError(
-        f"YOLO weights not found: {WEIGHTS_PATH}\n"
-        "Put best.pt there (see README: section 'Веса модели YOLO'). "
-        "Weights are not in the repo due to GitHub 100 MB limit."
+        f"YOLO weights not found. Put best.pt or best_h.pt in:\n{WEIGHTS_DIR}\n"
+        "See README: section 'Веса модели YOLO' and use the download link."
     )
 
 model = YOLO(str(WEIGHTS_PATH))
@@ -543,19 +545,22 @@ def _make_bbox_mask(shape, x1, y1, x2, y2):
 
 def run_graph_segmentation(
     image_bgr: np.ndarray,
-    conf: float = 0.10,
+    conf_root: float = 0.07,
+    conf_stem: float = 0.07,
+    conf_leaf: float = 0.07,
     connect_dist: float = 100.0,
     root_overlap_thresh: float = MASK_OVERLAP_THRESH,
 ) -> (np.ndarray, Dict[str, int], Dict[str, float], Dict[str, float], Dict[str, float]):
     """
-    Полный пайплайн из ноутбука: сегментация + скелетизация + графы для корней, стебля и листьев.
-    Возвращает картинку с графами, площади в пикселях и в мм^2.
+    Полный пайплайн: сегментация + скелетизация + графы для корней, стебля и листьев.
+    Порог уверенности задаётся отдельно для каждого класса.
     """
     img = image_bgr.copy()
     gray_global = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+    conf_min = min(conf_root, conf_stem, conf_leaf)
 
-    # ── YOLO-предсказание как в ноутбуке ─────────────────────────
-    results = model.predict(source=img, conf=float(conf), imgsz=960, retina_masks=True, verbose=False)[0]
+    # ── YOLO-предсказание ───────────────────────────────────────
+    results = model.predict(source=img, conf=float(conf_min), imgsz=960, retina_masks=True, verbose=False)[0]
     results = _keep_best_one_per_class(results)
 
     vis_img = img.copy()
@@ -575,8 +580,16 @@ def run_graph_segmentation(
         lengths_mm = {k: float(v) * mm_per_px for k, v in lengths_px.items()}
         return vis_img, areas_px, areas_mm2, lengths_px, lengths_mm
 
+    confs = results.boxes.conf.cpu().numpy()
     for idx, (mask_tensor, box) in enumerate(zip(results.masks.data, results.boxes.xyxy)):
         cls_name = model.names[int(results.boxes.cls[idx])].lower()
+        det_conf = float(confs[idx])
+        if cls_name in ROOT_CLASSES and det_conf < conf_root:
+            continue
+        if cls_name in STEM_CLASSES and det_conf < conf_stem:
+            continue
+        if cls_name in LEAF_CLASSES and det_conf < conf_leaf:
+            continue
         seg_mask = mask_tensor.cpu().numpy() > 0.5
         x1, y1, x2, y2 = map(int, box.cpu().numpy())
 
@@ -811,7 +824,9 @@ async def analyze_image(
     saturation: float = Form(1.0),
     blur: float = Form(0.0),
     enhance_dark: bool = Form(False),
-    conf: float = Form(0.07),
+    conf_root: float = Form(0.07),
+    conf_stem: float = Form(0.07),
+    conf_leaf: float = Form(0.07),
     connect_dist: float = Form(100.0),
     root_overlap: float = Form(MASK_OVERLAP_THRESH),
 ):
@@ -833,7 +848,9 @@ async def analyze_image(
 
     vis_img, areas_px, areas_mm2, lengths_px, lengths_mm = run_graph_segmentation(
         img_proc,
-        conf=conf,
+        conf_root=conf_root,
+        conf_stem=conf_stem,
+        conf_leaf=conf_leaf,
         connect_dist=connect_dist,
         root_overlap_thresh=root_overlap,
     )
@@ -870,7 +887,9 @@ async def analyze_image(
                     "saturation": saturation,
                     "blur": blur,
                     "enhance_dark": enhance_dark,
-                    "conf": conf,
+                    "conf_root": conf_root,
+                    "conf_stem": conf_stem,
+                    "conf_leaf": conf_leaf,
                     "connect_dist": connect_dist,
                     "root_overlap": root_overlap,
                 },

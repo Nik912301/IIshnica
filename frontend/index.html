@@ -491,9 +491,19 @@
           <div id="blur-value" class="range-val">0 px</div>
         </div>
         <div class="range-row">
-          <label for="conf">Уверенность модели</label>
-          <input id="conf" type="range" min="0.05" max="0.6" step="0.05" value="0.07" />
-          <div id="conf-value" class="range-val" title="Порог уверенности (0.05–0.6)">0.07</div>
+          <label for="conf-root">Уверенность: корень</label>
+          <input id="conf-root" type="range" min="0.05" max="0.6" step="0.05" value="0.07" />
+          <div id="conf-root-value" class="range-val">0.07</div>
+        </div>
+        <div class="range-row">
+          <label for="conf-stem">Уверенность: стебель</label>
+          <input id="conf-stem" type="range" min="0.05" max="0.6" step="0.05" value="0.07" />
+          <div id="conf-stem-value" class="range-val">0.07</div>
+        </div>
+        <div class="range-row">
+          <label for="conf-leaf">Уверенность: листья</label>
+          <input id="conf-leaf" type="range" min="0.05" max="0.6" step="0.05" value="0.07" />
+          <div id="conf-leaf-value" class="range-val">0.07</div>
         </div>
         <div class="range-row">
           <label for="connect">Связь графа</label>
@@ -575,14 +585,18 @@
     const brightness     = $("brightness");
     const saturation     = $("saturation");
     const blur           = $("blur");
-    const conf           = $("conf");
+    const confRoot       = $("conf-root");
+    const confStem       = $("conf-stem");
+    const confLeaf       = $("conf-leaf");
     const connect        = $("connect");
     const overlap        = $("overlap");
     const contrastVal    = $("contrast-value");
     const brightnessVal  = $("brightness-value");
     const saturationVal  = $("saturation-value");
     const blurVal        = $("blur-value");
-    const confVal        = $("conf-value");
+    const confRootVal    = $("conf-root-value");
+    const confStemVal    = $("conf-stem-value");
+    const confLeafVal    = $("conf-leaf-value");
     const connectVal     = $("connect-value");
     const overlapVal     = $("overlap-value");
     const analyzeBtn    = $("analyze-btn");
@@ -741,9 +755,9 @@
       updateOrigPreviewFilter();
     });
     grayscale.addEventListener("change", updateOrigPreviewFilter);
-    conf.addEventListener("input", () => {
-      confVal.textContent = Number(conf.value).toFixed(2);
-    });
+    confRoot.addEventListener("input", () => { confRootVal.textContent = Number(confRoot.value).toFixed(2); });
+    confStem.addEventListener("input", () => { confStemVal.textContent = Number(confStem.value).toFixed(2); });
+    confLeaf.addEventListener("input", () => { confLeafVal.textContent = Number(confLeaf.value).toFixed(2); });
     connect.addEventListener("input", () => {
       connectVal.textContent = `${Number(connect.value).toFixed(0)} px`;
     });
@@ -861,7 +875,9 @@
       fd.append("saturation", saturation.value);
       fd.append("blur", blur.value);
       fd.append("enhance_dark", $("enhance-dark").checked ? "true" : "false");
-      fd.append("conf", conf.value);
+      fd.append("conf_root", confRoot.value);
+      fd.append("conf_stem", confStem.value);
+      fd.append("conf_leaf", confLeaf.value);
       fd.append("connect_dist", connect.value);
       fd.append("root_overlap", overlap.value);
 
