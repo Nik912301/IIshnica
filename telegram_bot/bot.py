@@ -63,8 +63,6 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         "Отправь мне <b>фото растения</b> (JPG/PNG) — я запущу анализ и пришлю картинку с масками, "
         "площади и длины в мм/см и файлы JSON/CSV.\n\n"
         "Команды:\n"
-        "• /calibration — режим калибровки (стандартная / по фото)\n"
-        "• /calibrate — калибровка по фото доски (в режиме «по фото»)\n"
         "• /settings — настройки предобработки (ч/б, контраст, яркость)\n"
         "• /help — справка",
         parse_mode="HTML",
@@ -74,9 +72,8 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 async def help_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     await update.message.reply_text(
         "📷 <b>Как пользоваться</b>\n\n"
-        "1. Калибровка: /calibration — выбор режима (стандартная или по фото). В режиме «по фото»: /calibrate → отправь фото доски.\n"
-        "2. При необходимости: /settings (ч/б, контраст, яркость).\n"
-        "3. Отправь фото растения — получи картинку с масками, таблицу площадей/длин (мм и см), JSON/CSV.\n\n"
+        "1. При необходимости: /settings (ч/б, контраст, яркость).\n"
+        "2. Отправь фото растения — получи картинку с масками, таблицу площадей/длин (мм и см), JSON/CSV.\n\n"
         "Параметры в настройках:\n"
         "• <b>Ч/Б</b> — черно-белое изображение\n"
         "• <b>Контраст</b> — 0.5–2.0\n"
@@ -129,34 +126,10 @@ async def settings_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
     )
 
 
-async def calibration_mode_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    query = update.callback_query
-    await query.answer()
-    data = query.data
-    if data == "calib_mode_standard":
-        ok = set_calibration_mode_api("standard")
-        text = "✅ Режим калибровки: <b>стандартная</b>. Используется фиксированный масштаб." if ok else "❌ Не удалось переключить (проверь бекенд)."
-    elif data == "calib_mode_photo":
-        ok = set_calibration_mode_api("photo")
-        text = (
-            "✅ Режим калибровки: <b>по фото</b>.\n\n"
-            "Отправь /calibrate и затем фото шахматной доски, чтобы задать масштаб по изображению."
-        ) if ok else "❌ Не удалось переключить (проверь бекенд)."
-    else:
-        return
-    try:
-        await query.edit_message_text(text, parse_mode="HTML")
-    except Exception:
-        pass
-
-
 async def settings_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     query = update.callback_query
-    data = query.data
-    if data in ("calib_mode_standard", "calib_mode_photo"):
-        await calibration_mode_callback(update, context)
-        return
     await query.answer()
+    data = query.data
     ud = context.user_data
 
     if data == "noop":
@@ -203,76 +176,12 @@ def call_analyze_api(image_bytes: bytes, filename: str, params: dict) -> dict:
         "brightness": str(params["brightness"]),
         "saturation": str(params["saturation"]),
         "blur": str(params["blur"]),
-        "conf": "0.10",
+        "enhance_dark": "true",
+        "conf": "0.07",
         "connect_dist": "100.0",
         "root_overlap": "0.6",
     }
     r = requests.post(url, files=files, data=data, timeout=120)
-    r.raise_for_status()
-    return r.json()
-
-
-def get_calibration_from_api() -> dict:
-    """Текущая калибровка с бекенда (mode, mm_per_px)."""
-    try:
-        r = requests.get(f"{API_BASE.rstrip('/')}/api/calibration", timeout=10)
-        if r.ok:
-            return r.json()
-    except Exception:
-        pass
-    return {"mode": "standard", "mm_per_px": 0.213317502}
-
-
-def set_calibration_mode_api(mode: str) -> bool:
-    """Установить режим калибровки на бекенде."""
-    try:
-        r = requests.post(
-            f"{API_BASE.rstrip('/')}/api/calibration/mode",
-            json={"mode": mode},
-            timeout=10,
-        )
-        return r.ok
-    except Exception:
-        return False
-
-
-async def calibration_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Переключатель режима калибровки: стандартная / по фото."""
-    data = get_calibration_from_api()
-    mode = data.get("mode", "standard")
-    mm = data.get("mm_per_px", 0)
-    mode_label = "по фото" if mode == "photo" else "стандартная"
-    text = (
-        "📐 <b>Режим калибровки</b>\n\n"
-        f"Сейчас: <b>{mode_label}</b>\n"
-        f"Масштаб: <code>{mm:.6f}</code> мм/px\n\n"
-        "• <b>Стандартная</b> — фиксированный масштаб (без фото).\n"
-        "• <b>По фото</b> — масштаб по загруженной шахматной доске (команда /calibrate)."
-    )
-    keyboard = InlineKeyboardMarkup([
-        [
-            InlineKeyboardButton("Стандартная", callback_data="calib_mode_standard"),
-            InlineKeyboardButton("По фото", callback_data="calib_mode_photo"),
-        ],
-    ])
-    await update.message.reply_text(text, parse_mode="HTML", reply_markup=keyboard)
-
-
-async def calibrate_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    context.user_data["await_calibration"] = True
-    await update.message.reply_text(
-        "📐 <b>Калибровка по фото</b>\n\n"
-        "Отправь <b>фото шахматной доски</b> (клетка 10×10 мм, в кадре может быть 5×8, 7×4 или часть сетки). "
-        "После этого масштаб будет применён и режим калибровки переключится на «по фото».",
-        parse_mode="HTML",
-    )
-
-
-def call_calibrate_api(image_bytes: bytes, filename: str = "calib.jpg") -> dict:
-    url = f"{API_BASE.rstrip('/')}/api/calibrate"
-    files = {"file": (filename, image_bytes, "image/jpeg")}
-    data = {"pattern": "5x8", "checker_size_mm": "10"}
-    r = requests.post(url, files=files, data=data, timeout=30)
     r.raise_for_status()
     return r.json()
 
@@ -290,31 +199,6 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         await update.message.reply_text(
             "Бот не настроен: задайте переменную окружения TELEGRAM_BOT_TOKEN."
         )
-        return
-
-    # Калибровка по шахматной доске
-    if context.user_data.pop("await_calibration", False):
-        msg = await update.message.reply_text("⏳ Калибровка…")
-        try:
-            photo = update.message.photo[-1]
-            file = await context.bot.get_file(photo.file_id)
-            bio = io.BytesIO()
-            await file.download_to_memory(bio)
-            image_bytes = bio.getvalue()
-        except Exception as e:
-            await msg.edit_text(f"❌ Не удалось загрузить фото: {e}")
-            return
-        try:
-            result = call_calibrate_api(image_bytes)
-            mm = result.get("mm_per_px", 0)
-            await msg.edit_text(
-                f"✅ <b>Калибровка применена</b>\n\n"
-                f"Масштаб: <code>{mm:.6f}</code> мм/px\n"
-                f"Теперь все анализы будут в мм и см.",
-                parse_mode="HTML",
-            )
-        except requests.exceptions.RequestException as e:
-            await msg.edit_text(f"❌ Ошибка калибровки. Проверь фото доски (5×8, 10 мм).\n{e}")
         return
 
     msg = await update.message.reply_text("⏳ Обрабатываю изображение…")
@@ -447,8 +331,6 @@ def main() -> None:
     app.add_error_handler(error_handler)
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("help", help_cmd))
-    app.add_handler(CommandHandler("calibration", calibration_cmd))
-    app.add_handler(CommandHandler("calibrate", calibrate_cmd))
     app.add_handler(CommandHandler("settings", settings_cmd))
     app.add_handler(CallbackQueryHandler(settings_callback))
     app.add_handler(MessageHandler(filters.PHOTO, handle_photo))

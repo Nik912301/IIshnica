@@ -55,9 +55,7 @@ def _save_calibration_data(data: dict) -> None:
 
 
 def _load_calibration() -> float:
-    data = _load_calibration_data()
-    if data.get("mode") == CALIBRATION_MODE_PHOTO:
-        return float(data.get("mm_per_px", STANDARD_MM_PER_PX))
+    """Всегда стандартная калибровка (фиксированный масштаб)."""
     return STANDARD_MM_PER_PX
 
 
@@ -71,7 +69,7 @@ def get_mm_per_px() -> float:
 
 
 def get_calibration_mode() -> str:
-    return _load_calibration_data().get("mode", CALIBRATION_MODE_STANDARD)
+    return CALIBRATION_MODE_STANDARD
 
 
 def set_calibration(mm_per_px: float) -> None:
@@ -139,13 +137,16 @@ class ArchiveRequest(BaseModel):
     job_ids: List[str]
 
 
-# Размеры сетки внутренних углов (cols x rows). На первом месте варианты для 5×8 клеток (4×7 углов) и 6×9 клеток (5×8 углов).
+# Размеры сетки внутренних углов (cols x rows). 8×5 клеток → (7, 4) внутренних углов (как в рабочей калибровке).
+CHESSBOARD_8x5 = (7, 4)
 CALIBRATION_PATTERNS: List[tuple] = [
-    (4, 7), (7, 4), (5, 8), (8, 5), (5, 4), (4, 5), (6, 4), (4, 6),
+    (7, 4), (4, 7), (5, 8), (8, 5), (5, 4), (4, 5), (6, 4), (4, 6),
     (6, 9), (9, 6), (5, 3), (3, 5), (2, 7), (7, 2), (3, 8), (8, 3),
     (3, 7), (7, 3), (4, 4), (6, 6), (5, 5), (3, 4), (4, 3),
     (2, 5), (5, 2), (2, 6), (6, 2), (3, 6), (6, 3),
 ]
+# Флаги из рабочей калибровки (findChessboardCorners)
+CALIB_CB_FLAGS = cv2.CALIB_CB_ADAPTIVE_THRESH | cv2.CALIB_CB_NORMALIZE_IMAGE
 
 
 def _clahe(gray: np.ndarray, clip_limit: float = 2.0, grid: int = 8) -> np.ndarray:
@@ -203,15 +204,19 @@ def _find_corners_sb(gray: np.ndarray, cols: int, rows: int) -> float | None:
 
 
 def _calibrate_chessboard_single(gray: np.ndarray, checker_size_mm: float, patterns: List[tuple]) -> float | None:
-    """Перебор паттернов: сначала SB (если есть), потом классика с разными флагами."""
+    """Калибровка: сначала (7,4) с флагами как в рабочей визуализации, затем SB и остальные паттерны."""
+    # 1) Точно как в рабочем коде: (7, 4) + ADAPTIVE_THRESH + NORMALIZE_IMAGE
+    cols, rows = CHESSBOARD_8x5
+    px = _find_corners_one(gray, cols, rows, CALIB_CB_FLAGS)
+    if px is not None:
+        return checker_size_mm / px
+    # 2) findChessboardCornersSB по всем паттернам (устойчивее к бликам)
     for (cols, rows) in patterns:
         px = _find_corners_sb(gray, cols, rows)
         if px is not None:
             return checker_size_mm / px
-    flags_list = [
-        cv2.CALIB_CB_ADAPTIVE_THRESH | cv2.CALIB_CB_NORMALIZE_IMAGE,
-        cv2.CALIB_CB_ADAPTIVE_THRESH,
-    ]
+    # 3) Классический findChessboardCorners по всем паттернам и флагам
+    flags_list = [CALIB_CB_FLAGS, cv2.CALIB_CB_ADAPTIVE_THRESH]
     for flags in flags_list:
         for (cols, rows) in patterns:
             px = _find_corners_one(gray, cols, rows, flags)
@@ -279,7 +284,11 @@ if FRONTEND_DIR.is_dir():
 
 
 if not WEIGHTS_PATH.is_file():
-    raise FileNotFoundError(f"YOLO weights not found: {WEIGHTS_PATH}")
+    raise FileNotFoundError(
+        f"YOLO weights not found: {WEIGHTS_PATH}\n"
+        "Put best.pt there (see README: section 'Веса модели YOLO'). "
+        "Weights are not in the repo due to GitHub 100 MB limit."
+    )
 
 model = YOLO(str(WEIGHTS_PATH))
 
@@ -291,12 +300,24 @@ def apply_preprocessing(
     brightness: int,
     saturation: float,
     blur: float,
+    enhance_dark_background: bool = False,
 ) -> np.ndarray:
     img = image_bgr.copy()
 
     if grayscale:
         gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
         img = cv2.cvtColor(gray, cv2.COLOR_GRAY2BGR)
+
+    # Усиление контраста для тёмного фона (чашки Петри, тёмный фон — лучше видны корни и листья)
+    if enhance_dark_background:
+        try:
+            lab = cv2.cvtColor(img, cv2.COLOR_BGR2LAB)
+            l, a, b = cv2.split(lab)
+            clahe = cv2.createCLAHE(clipLimit=2.5, tileGridSize=(8, 8))
+            l = clahe.apply(l)
+            img = cv2.cvtColor(cv2.merge([l, a, b]), cv2.COLOR_LAB2BGR)
+        except Exception:
+            pass
 
     # Контраст и яркость
     img = cv2.convertScaleAbs(img, alpha=contrast, beta=brightness)
@@ -789,7 +810,8 @@ async def analyze_image(
     brightness: int = Form(0),
     saturation: float = Form(1.0),
     blur: float = Form(0.0),
-    conf: float = Form(0.10),
+    enhance_dark: bool = Form(False),
+    conf: float = Form(0.07),
     connect_dist: float = Form(100.0),
     root_overlap: float = Form(MASK_OVERLAP_THRESH),
 ):
@@ -806,6 +828,7 @@ async def analyze_image(
         brightness=brightness,
         saturation=saturation,
         blur=blur,
+        enhance_dark_background=enhance_dark,
     )
 
     vis_img, areas_px, areas_mm2, lengths_px, lengths_mm = run_graph_segmentation(
@@ -846,6 +869,7 @@ async def analyze_image(
                     "brightness": brightness,
                     "saturation": saturation,
                     "blur": blur,
+                    "enhance_dark": enhance_dark,
                     "conf": conf,
                     "connect_dist": connect_dist,
                     "root_overlap": root_overlap,
@@ -960,65 +984,14 @@ async def download_archive(kind: str, body: ArchiveRequest):
 
 @app.get("/api/calibration")
 async def get_calibration():
-    """Текущая калибровка: режим, мм/пиксель и см/пиксель."""
-    data = _load_calibration_data()
+    """Текущая калибровка: всегда стандартная (фиксированный масштаб)."""
     mm = get_mm_per_px()
     return {
-        "mode": data.get("mode", CALIBRATION_MODE_STANDARD),
+        "mode": CALIBRATION_MODE_STANDARD,
         "mm_per_px": mm,
         "cm_per_px": mm / 10.0,
         "standard_mm_per_px": STANDARD_MM_PER_PX,
     }
-
-
-class CalibrationModeRequest(BaseModel):
-    mode: str  # "standard" | "photo"
-
-
-@app.post("/api/calibration/mode")
-async def set_calibration_mode_api(body: CalibrationModeRequest):
-    """Переключить режим калибровки: standard (фиксированная) или photo (по загруженному фото)."""
-    mode = (body.mode or "").strip().lower()
-    if mode not in (CALIBRATION_MODE_STANDARD, CALIBRATION_MODE_PHOTO):
-        return JSONResponse(status_code=400, content={"detail": "mode must be 'standard' or 'photo'"})
-    set_calibration_mode(mode)
-    return {"mode": mode, "mm_per_px": get_mm_per_px(), "message": "OK"}
-
-
-@app.post("/api/calibrate")
-async def calibrate(
-    file: UploadFile = File(...),
-    pattern: str = Form("5x8"),
-    checker_size_mm: float = Form(10.0),
-):
-    """
-    Калибровка по фото шахматной доски. Клетка 10×10 мм, сетка внутренних углов 5×8.
-    Устанавливает масштаб для всех последующих анализов.
-    """
-    content = await file.read()
-    np_arr = np.frombuffer(content, np.uint8)
-    img = cv2.imdecode(np_arr, cv2.IMREAD_COLOR)
-    if img is None:
-        return JSONResponse(status_code=400, content={"detail": "Cannot decode image"})
-    gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-    patterns: List[tuple] = []
-    for part in pattern.replace(",", " ").split():
-        part = part.strip().lower()
-        if "x" in part:
-            a, b = part.split("x", 1)
-            patterns.append((int(a), int(b)))
-    if not patterns:
-        patterns = CALIBRATION_PATTERNS
-    mm_per_px = _calibrate_chessboard(gray, checker_size_mm, patterns)
-    if mm_per_px is None:
-        return JSONResponse(
-            status_code=400,
-            content={
-                "detail": "Сетку шахматной доски не удалось найти (перебраны разные размеры и предобработка). Попробуй другое фото: хорошее освещение, клетка 10 мм, по возможности без бликов и пальцев на сетке. Либо используй режим «Стандартная» калибровка.",
-            },
-        )
-    set_calibration(mm_per_px)
-    return {"mm_per_px": mm_per_px, "cm_per_px": mm_per_px / 10.0, "message": "Calibration applied."}
 
 
 @app.get("/api/jobs")

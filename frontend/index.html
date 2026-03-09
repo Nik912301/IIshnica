@@ -377,45 +377,39 @@
       font-size: 0.7rem;
       color: var(--text-soft);
       display: flex;
-      justify-content: space-between;
-      gap: 8px;
+      flex-direction: column;
+      gap: 10px;
       margin-top: 6px;
     }
-    .calib-box {
-      border-radius: var(--radius-sm);
-      border: 1px solid var(--border);
-      background: rgba(45, 90, 58, 0.08);
-      padding: 18px 20px;
-      margin-top: 12px;
+    .item-footer-id { font-variant-numeric: tabular-nums; opacity: 0.9; }
+    .item-metrics {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 0 24px;
+      font-size: 0.7rem;
+      line-height: 1.5;
     }
-    .calib-box .sec { color: var(--calib); }
-    .calib-mode-row { display: flex; gap: 20px; margin-bottom: 12px; flex-wrap: wrap; }
-    .calib-radio { font-size: 0.8125rem; color: var(--text); cursor: pointer; display: flex; align-items: center; gap: 8px; }
-    .calib-radio input { accent-color: var(--calib); }
-    .calib-photo-block { margin-top: 10px; }
-    .calib-value {
-      font-size: 1rem;
-      color: var(--accent);
-      font-variant-numeric: tabular-nums;
+    @media (max-width: 600px) { .item-metrics { grid-template-columns: 1fr; } }
+    .item-metrics-col {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+    .item-metrics-col h4 {
+      margin: 0 0 4px;
+      font-size: 0.65rem;
       font-weight: 600;
-      margin-top: 4px;
-    }
-    .btn-calib {
-      margin-top: 12px;
-      padding: 12px 18px;
-      border-radius: 999px;
-      border: 1px solid var(--calib);
-      background: rgba(45, 90, 58, 0.12);
-      color: var(--text);
-      font-size: 0.75rem;
-      letter-spacing: 0.1em;
+      letter-spacing: 0.06em;
       text-transform: uppercase;
-      font-weight: 600;
-      cursor: pointer;
-      width: 100%;
-      transition: background 0.2s;
+      color: var(--text-soft);
     }
-    .btn-calib:hover { background: rgba(45, 90, 58, 0.2); }
+    .item-metrics-row {
+      display: flex;
+      justify-content: space-between;
+      gap: 8px;
+    }
+    .item-metrics-row .k { min-width: 52px; }
+    .item-metrics-row .v { font-variant-numeric: tabular-nums; color: var(--text); }
     .data-table-wrap {
       overflow-x: auto;
       border-radius: var(--radius-sm);
@@ -459,20 +453,6 @@
         Масштаб: <span id="scale-info">—</span>. Единицы: <b>мм²</b> / <b>см²</b>, <b>мм</b> / <b>см</b>.
       </div>
 
-      <div class="sec">Калибровка</div>
-      <div class="calib-box">
-        <div class="calib-mode-row">
-          <label class="calib-radio"><input type="radio" name="calib-mode" value="standard" id="calib-mode-standard" /> Стандартная</label>
-          <label class="calib-radio"><input type="radio" name="calib-mode" value="photo" id="calib-mode-photo" /> По фото</label>
-        </div>
-        <div class="sec">Текущая: <span id="calib-value" class="calib-value">—</span></div>
-        <div id="calib-photo-block" class="calib-photo-block" style="display:none;">
-          <input id="calib-file" type="file" accept="image/*" style="font-size:11px;margin-top:6px;" />
-          <button type="button" id="calib-btn" class="btn-calib">Загрузить фото доски и применить</button>
-        </div>
-        <div id="calib-status" class="status" style="margin-top:6px;"></div>
-      </div>
-
       <div class="sec">Файл</div>
       <div class="upload-zone">
         <div class="upload-label">Изображения растений (JPG / PNG)</div>
@@ -485,6 +465,10 @@
         <label class="check-row">
           <input id="grayscale" type="checkbox" />
           Чёрно-белое изображение
+        </label>
+        <label class="check-row">
+          <input id="enhance-dark" type="checkbox" />
+          Усилить контраст для тёмного фона (чашка Петри)
         </label>
         <div class="range-row">
           <label for="contrast">Контраст</label>
@@ -507,9 +491,9 @@
           <div id="blur-value" class="range-val">0 px</div>
         </div>
         <div class="range-row">
-          <label for="conf">Порог модели</label>
-          <input id="conf" type="range" min="0.05" max="0.6" step="0.05" value="0.10" />
-          <div id="conf-value" class="range-val">0.10</div>
+          <label for="conf">Уверенность модели</label>
+          <input id="conf" type="range" min="0.05" max="0.6" step="0.05" value="0.07" />
+          <div id="conf-value" class="range-val" title="Порог уверенности (0.05–0.6)">0.07</div>
         </div>
         <div class="range-row">
           <label for="connect">Связь графа</label>
@@ -611,10 +595,6 @@
     const dlJson  = $("dl-json");
     const dlCsv   = $("dl-csv");
 
-    const calibFile = $("calib-file");
-    const calibBtn = $("calib-btn");
-    const calibValue = $("calib-value");
-    const calibStatus = $("calib-status");
     const dataTableBody = $("data-table-body");
 
     let processedJobs = [];
@@ -626,53 +606,11 @@
         if (r.ok) {
           const d = await r.json();
           mmPerPx = d.mm_per_px;
-          const mode = d.mode || "standard";
-          const standardRadio = $("calib-mode-standard");
-          const photoRadio = $("calib-mode-photo");
-          if (mode === "photo") {
-            photoRadio.checked = true;
-            $("calib-photo-block").style.display = "block";
-          } else {
-            standardRadio.checked = true;
-            $("calib-photo-block").style.display = "none";
-          }
-          calibValue.textContent = `${(d.mm_per_px).toFixed(6)} мм/px`;
           scaleInfo.textContent = `${(d.mm_per_px).toFixed(6)} мм/px`;
         }
       } catch (e) {
-        calibValue.textContent = "—";
+        scaleInfo.textContent = "—";
       }
-    }
-
-    function bindCalibrationMode() {
-      const standardRadio = $("calib-mode-standard");
-      const photoRadio = $("calib-mode-photo");
-      const photoBlock = $("calib-photo-block");
-      function updateVisibility() {
-        photoBlock.style.display = photoRadio.checked ? "block" : "none";
-      }
-      standardRadio.addEventListener("change", async () => {
-        updateVisibility();
-        try {
-          await fetch(`${BASE}/api/calibration/mode`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ mode: "standard" }),
-          });
-          loadCalibration();
-        } catch (e) {}
-      });
-      photoRadio.addEventListener("change", async () => {
-        updateVisibility();
-        try {
-          await fetch(`${BASE}/api/calibration/mode`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ mode: "photo" }),
-          });
-          loadCalibration();
-        } catch (e) {}
-      });
     }
 
     async function loadJobsTable() {
@@ -716,40 +654,8 @@
       }
     }
 
-    calibBtn.addEventListener("click", async () => {
-      if (!calibFile.files?.length) {
-        calibStatus.textContent = "Выберите фото шахматной доски (5×8, клетка 10 мм)";
-        calibStatus.className = "status err";
-        return;
-      }
-      calibStatus.textContent = "Калибровка…";
-      calibStatus.className = "status";
-      const fd = new FormData();
-      fd.append("file", calibFile.files[0]);
-      fd.append("pattern", "5x8");
-      fd.append("checker_size_mm", "10");
-      try {
-        const r = await fetch(`${BASE}/api/calibrate`, { method: "POST", body: fd });
-        const data = await r.json().catch(() => ({}));
-        if (!r.ok) {
-          calibStatus.textContent = data.detail || "Ошибка калибровки";
-          calibStatus.className = "status err";
-          return;
-        }
-        mmPerPx = data.mm_per_px;
-        calibValue.textContent = `${(data.mm_per_px).toFixed(6)} мм/px`;
-        scaleInfo.textContent = `${(data.mm_per_px).toFixed(6)} мм/px`;
-        calibStatus.textContent = "Калибровка применена.";
-        calibStatus.className = "status ok";
-      } catch (e) {
-        calibStatus.textContent = e.message || "Ошибка сети";
-        calibStatus.className = "status err";
-      }
-    });
-
     loadCalibration();
     loadJobsTable();
-    bindCalibrationMode();
 
     (function () {
       const btn = $("table-toggle-btn");
@@ -901,10 +807,27 @@
 
       const footer = document.createElement("div");
       footer.className = "item-footer";
+      const totalA = total;
+      const totalAc = (total / 100).toFixed(2);
+      const totalL = lt;
+      const totalLc = (lt / 10).toFixed(2);
       footer.innerHTML =
-        `<span>ID: <code>${jobId.slice(0, 8)}</code></span>` +
-        `<span>Площадь (мм² / см²): корни ${root.toFixed(1)} / ${rc.toFixed(2)}, стебель ${stem.toFixed(1)} / ${sc.toFixed(2)}, листья ${leaf.toFixed(1)} / ${lc.toFixed(2)}, всего ${total.toFixed(1)} / ${(total/100).toFixed(2)}<br/>` +
-        `Длина (мм / см): корни ${lr.toFixed(1)} / ${lrc.toFixed(2)}, стебель ${ls.toFixed(1)} / ${lsc.toFixed(2)}, листья ${ll.toFixed(1)} / ${llc.toFixed(2)}, всего ${lt.toFixed(1)} / ${(lt/10).toFixed(2)}</span>`;
+        `<span class="item-footer-id">ID: <code>${jobId.slice(0, 8)}</code></span>` +
+        `<div class="item-metrics">` +
+        `<div class="item-metrics-col">` +
+        `<h4>Площадь (мм² / см²)</h4>` +
+        `<div class="item-metrics-row"><span class="k">Корни</span><span class="v">${root.toFixed(1)} / ${rc.toFixed(2)}</span></div>` +
+        `<div class="item-metrics-row"><span class="k">Стебель</span><span class="v">${stem.toFixed(1)} / ${sc.toFixed(2)}</span></div>` +
+        `<div class="item-metrics-row"><span class="k">Листья</span><span class="v">${leaf.toFixed(1)} / ${lc.toFixed(2)}</span></div>` +
+        `<div class="item-metrics-row"><span class="k">Всего</span><span class="v"><b>${totalA.toFixed(1)} / ${totalAc}</b></span></div>` +
+        `</div>` +
+        `<div class="item-metrics-col">` +
+        `<h4>Длина (мм / см)</h4>` +
+        `<div class="item-metrics-row"><span class="k">Корни</span><span class="v">${lr.toFixed(1)} / ${lrc.toFixed(2)}</span></div>` +
+        `<div class="item-metrics-row"><span class="k">Стебель</span><span class="v">${ls.toFixed(1)} / ${lsc.toFixed(2)}</span></div>` +
+        `<div class="item-metrics-row"><span class="k">Листья</span><span class="v">${ll.toFixed(1)} / ${llc.toFixed(2)}</span></div>` +
+        `<div class="item-metrics-row"><span class="k">Всего</span><span class="v"><b>${totalL.toFixed(1)} / ${totalLc}</b></span></div>` +
+        `</div></div>`;
 
       item.appendChild(origFrame);
       item.appendChild(resFrame);
@@ -937,6 +860,7 @@
       fd.append("brightness", brightness.value);
       fd.append("saturation", saturation.value);
       fd.append("blur", blur.value);
+      fd.append("enhance_dark", $("enhance-dark").checked ? "true" : "false");
       fd.append("conf", conf.value);
       fd.append("connect_dist", connect.value);
       fd.append("root_overlap", overlap.value);
