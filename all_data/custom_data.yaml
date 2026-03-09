@@ -1,8 +1,0 @@
-path: D:\Games\cursor
-train: train/images
-val: train/images
-nc: 3
-names:
-  0: root
-  1: stem
-  2: leaf
