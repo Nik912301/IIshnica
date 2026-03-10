@@ -73,8 +73,8 @@ https://disk.yandex.ru/d/CDl2COoxw1E2sA
 
 ### 1. Клонирование репозитория
 ```bash
-git clone https://github.com/yourusername/plant-graph-analyzer.git
-cd plant-graph-analyzer
+git clone https://github.com/Nik912301/IIshnica.git
+cd IIshnica
 ```
 
 ### 2. Создание виртуального окружения
