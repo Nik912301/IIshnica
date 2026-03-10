@@ -10,24 +10,19 @@ import json
 import traceback
 from pathlib import Path
 from typing import Any, Optional, Dict, List
-
-# Обработка изображений и данные
 import cv2
 import numpy as np
 import networkx as nx
-from skimage.morphology import skeletonize
-from skimage import measure
+from skimage.morphology import skeletonize, remove_small_objects
+from skimage.measure import label, regionprops
 from scipy.spatial import cKDTree
+import skimage.measure as meas
+import time
 
 # ============================================================================
 # УТИЛИТА: Конвертация NumPy типов в JSON-сериализуемые
 # ============================================================================
-
 def to_json_serializable(obj: Any) -> Any:
-    """
-    Рекурсивно конвертирует объекты NumPy и другие не-JSON-сериализуемые типы
-    в нативные типы Python для корректной отправки через FastAPI.
-    """
     if isinstance(obj, np.ndarray):
         return obj.tolist()
     elif isinstance(obj, (np.integer, np.int64, np.int32, np.int16, np.int8)):
@@ -43,7 +38,6 @@ def to_json_serializable(obj: Any) -> Any:
     elif isinstance(obj, (list, tuple, set)):
         return [to_json_serializable(item) for item in obj]
     elif hasattr(obj, '__dict__'):
-        # Для объектов с __dict__ (но не самих numpy типов)
         try:
             return to_json_serializable(vars(obj))
         except:
@@ -54,13 +48,9 @@ def to_json_serializable(obj: Any) -> Any:
 # ============================================================================
 # НАСТРОЙКА FASTAPI
 # ============================================================================
-
 BASE_DIR = os.path.abspath(os.path.dirname(__file__))
 print(f"📁 BASE_DIR: {BASE_DIR}")
-
 app = FastAPI(title="Plant Graph Analyzer 2026")
-
-# CORS
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -68,119 +58,88 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
-# Создаём необходимые папки
 for folder in ["uploads", "results", "debug_stages", "temp_calib", "calib_visualizations"]:
     os.makedirs(os.path.join(BASE_DIR, folder), exist_ok=True)
-
-# Монтируем статические файлы
 app.mount("/results", StaticFiles(directory=os.path.join(BASE_DIR, "results")), name="results")
 app.mount("/debug", StaticFiles(directory=os.path.join(BASE_DIR, "debug_stages")), name="debug")
 app.mount("/calib_visualizations", StaticFiles(directory=os.path.join(BASE_DIR, "calib_visualizations")), name="calib_vis")
 app.mount("/temp_calib", StaticFiles(directory=os.path.join(BASE_DIR, "temp_calib")), name="temp_calib")
 
 # ============================================================================
-# КОНФИГУРАЦИЯ ПО УМОЛЧАНИЮ
+# ⚙️ КОНФИГУРАЦИЯ (точно как в локальном скрипте)
 # ============================================================================
-
 DEFAULT_CONFIG = {
-    # Пути
+    # ─── Пути ────────────────────────────────────────────────────────────────
     "MODEL_PATH": os.path.join(BASE_DIR, "yolo_weights", "plants_optimized_seg", "weights", "best_h.pt"),
     "DEBUG_DIR": os.path.join(BASE_DIR, "debug_stages"),
     
-    # Классы YOLO
+    # ─── Классы ─────────────────────────────────────────────────────────────
     "ROOT_CLASSES": {'root', 'корень'},
     "STEM_CLASSES": {'stem', 'стебель'},
     "LEAF_CLASSES": {'leaf', 'лист'},
     
-    # YOLO параметры
-    "YOLO_CONF_ROOT": 0.001,
+    # ─── 🎯 YOLO параметры (ТОЧНО как в локальном скрипте) ──────────────────
+    "YOLO_CONF_ROOT": 0.1,
     "YOLO_CONF_STEM": 0.10,
     "YOLO_CONF_LEAF": 0.30,
     "YOLO_IOU": 0.50,
-    "YOLO_IOU_ROOT": 0.80,
-    "YOLO_IMG_SIZE": 1280,
+    "YOLO_IMG_SIZE": (1536, 2048),
     "YOLO_MAX_DET": 1000,
-    "YOLO_AUGMENT": "light",
+    "YOLO_RETINA_MASKS": True,
+    "YOLO_AGNOSTIC_NMS": False,
     
-    # Изображение
+    # ─── 🖼️ Параметры изображения ───────────────────────────────────────────
     "IMG_MAX_WIDTH": 2048,
-    "IMG_MAX_HEIGHT": 2048,
-    "IMG_INTERPOLATION": "cubic",
+    "IMG_MAX_HEIGHT": 1536,
     
-    # Предобработка
-    "PREPROC_BLUR": 0,
-    "PREPROC_CONTRAST": 2.0,
-    "PREPROC_DENOISE": 0,
-    "PREPROC_ADAPTIVE": "gaussian",
-    
-    # Скелетизация
+    # ─── 🦴 Скелетизация ─────────────────────────────────────────────────────
     "SKELETON_METHOD": "zhang",
-    "SKELETON_ITER": 100,
     
-    # Граф
+    # ─── 🕸️ Параметры графа (как в локальном скрипте) ───────────────────────
     "GRAPH_CONNECT_RADIUS": 1.7,
     "GRAPH_MAX_NODES": 38000,
-    "REMOVE_SMALL_COMP_SIZE": 30,
-    "GRAPH_PRUNE_BRANCHES": 5,
+    "REMOVE_SMALL_COMP_SIZE": 60,
     
-    # Соединение компонент
-    "ROOT_CONNECT_MAX_DIST": 50,
+    # ─── 🔗 Соединение компонент (как в локальном скрипте) ──────────────────
+    "ROOT_CONNECT_MAX_DIST": 60,
     "ROOT_CONNECT_MIN_DIST": 4.0,
-    "ROOT_ANCHOR_MAX_DIST": 50,
-    "ROOT_MIN_SIZE_RATIO": 0.1,
+    "ROOT_ANCHOR_MAX_DIST": 300,
     "STEM_LEAF_CONNECT_MAX_DIST": 5,
     "STEM_LEAF_CONNECT_MIN_DIST": 1.0,
-    "STEM_LEAF_ANGLE_THRESH": 45,
     
-    # Морфология
-    "COMBINED_MIN_SIZE": 60,
+    # ─── 🧹 Морфология ───────────────────────────────────────────────────────
+    "COMBINED_MIN_SIZE": 20,
     "MORPH_KERNEL_SIZE": 3,
     "MORPH_CLOSE_SIZE": 0,
     "MORPH_ITER": 1,
-    "NOISE_REMOVE_AREA": 20,
-    "NOISE_REMOVE_ECCENTRICITY": 0.99,
     
-    # Отрисовка
+    # ─── 🎨 Отрисовка (как в локальном скрипте) ─────────────────────────────
     "EDGE_THICKNESS": 2,
-    "NODE_END_RADIUS": 5,
-    "NODE_MID_RADIUS": 2,
-    "DRAW_NODE_LABELS": "degree",
-    "FONT_SIZE": 12,
-    "DRAW_BOUNDING_BOX": "yolo",
-    "OUTPUT_FORMAT": "png",
+    "NODE_END_RADIUS_STEM_LEAF": 5,
+    "NODE_MID_RADIUS_STEM_LEAF": 2,
+    "NODE_END_RADIUS_ROOT": 4,
+    "NODE_MID_RADIUS_ROOT": 2,
+    "NODE_END_RADIUS_DEBUG": 6,
+    "NODE_MID_RADIUS_DEBUG": 3,
+    "FONT_SIZE": 0.7,
+    "FONT_SIZE_ROOT": 0.6,  # для подписи корней как в локальном
+    "OUTPUT_FORMAT": "jpg",
     
-    # Расширенные
-    "MAX_WORKERS": 4,
-    "BATCH_SIZE": 1,
+    # ─── ⚡ Производительность ───────────────────────────────────────────────
     "USE_GPU": "auto",
-    "DEBUG_MODE": "off",
-    "SAVE_INTERMEDIATE": "all",
-    "LOG_LEVEL": "debug",
-    "EXPORT_FORMAT": "json",
-    "EXPORT_GRAPHML": False,
-    "EXPORT_COORDS": True,
+    "SAVE_DEBUG_STAGES": True,
     
-    # Калибровка
-    "CHESSBOARD_SIZE": (7, 4),
-    "SQUARE_SIZE_MM": 25.0,
-    "CALIB_FLAGS": cv2.CALIB_FIX_K3 | cv2.CALIB_FIX_K4 | cv2.CALIB_FIX_K5,
-    "CALIB_ALPHA": 1.0,
-    
-    # Цвета
+    # ─── 🎨 Цвета (как в локальном скрипте) ─────────────────────────────────
     "COLORS": {
         'root': {'edge': (255, 0, 180), 'node_end': (0, 0, 255), 'node_mid': (180, 0, 255)},
-        'stem': {'edge': (0, 220, 0), 'node_end': (0, 100, 0), 'node_mid': (100, 255, 100)},
-        'leaf': {'edge': (0, 180, 255), 'node_end': (0, 80, 180), 'node_mid': (100, 220, 255)},
+        'stem': {'edge': (0, 220, 0),   'node_end': (0, 100, 0), 'node_mid': (100, 255, 100)},
+        'leaf': {'edge': (0, 180, 255), 'node_end': (0, 80, 180),  'node_mid': (100, 220, 255)},
     },
-    
-    "SAVE_DEBUG_STAGES": True,
 }
 
 # ============================================================================
 # ГЛОБАЛЬНЫЕ ПЕРЕМЕННЫЕ
 # ============================================================================
-
 model = None
 camera_matrix = None
 dist_coeffs = None
@@ -218,62 +177,16 @@ def try_load_calibration():
 try_load_calibration()
 
 # ============================================================================
-# ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ
+# ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ (ТОЧНО как в локальном скрипте)
 # ============================================================================
 
-def get_interpolation_method(name: str) -> int:
-    """Возвращает константу интерполяции OpenCV по имени."""
-    methods = {
-        'linear': cv2.INTER_LINEAR,
-        'cubic': cv2.INTER_CUBIC,
-        'area': cv2.INTER_AREA,
-        'lanczos': cv2.INTER_LANCZOS4,
-        'nearest': cv2.INTER_NEAREST,
-    }
-    return methods.get(name, cv2.INTER_CUBIC)
-
-def preprocess_image(img: np.ndarray, config: dict) -> np.ndarray:
-    """Предобработка изображения согласно параметрам."""
-    h, w = img.shape[:2]
-    max_w = config.get("IMG_MAX_WIDTH", 2048)
-    max_h = config.get("IMG_MAX_HEIGHT", 2048)
-    
-    # Ресайз если нужно
-    if w > max_w or h > max_h:
-        scale = min(max_w / w, max_h / h)
-        new_w, new_h = int(w * scale), int(h * scale)
-        interp = get_interpolation_method(config.get("IMG_INTERPOLATION", "cubic"))
-        img = cv2.resize(img, (new_w, new_h), interpolation=interp)
-    
-    # Размытие
-    blur_k = config.get("PREPROC_BLUR", 0)
-    if blur_k > 1 and blur_k % 2 == 1:
-        img = cv2.GaussianBlur(img, (blur_k, blur_k), 0)
-    
-    # CLAHE для контраста
-    contrast = config.get("PREPROC_CONTRAST", 2.0)
-    if contrast > 1.0:
-        lab = cv2.cvtColor(img, cv2.COLOR_BGR2LAB)
-        l, a, b = cv2.split(lab)
-        clahe = cv2.createCLAHE(clipLimit=contrast, tileGridSize=(8, 8))
-        l = clahe.apply(l)
-        lab = cv2.merge([l, a, b])
-        img = cv2.cvtColor(lab, cv2.COLOR_LAB2BGR)
-    
-    # Denoise
-    denoise_h = config.get("PREPROC_DENOISE", 0)
-    if denoise_h > 0:
-        img = cv2.fastNlMeansDenoisingColored(img, None, denoise_h, denoise_h, 7, 21)
-    
-    return img
-
-def build_graph(skeleton: np.ndarray, config: dict) -> tuple:
-    """Строит граф из скелета."""
+def build_graph(skeleton, config: dict, keep_only_largest: bool = False):
+    """Строит граф из скелета — логика точно как в локальном скрипте."""
     yx = np.column_stack(np.where(skeleton))
     if len(yx) == 0:
         return nx.Graph(), skeleton
     
-    # Downsampling если узлов слишком много
+    # Downsampling как в локальном скрипте
     max_nodes = config.get("GRAPH_MAX_NODES", 38000)
     if len(yx) > max_nodes:
         step = max(1, len(yx) // max_nodes)
@@ -282,7 +195,6 @@ def build_graph(skeleton: np.ndarray, config: dict) -> tuple:
     if len(yx) == 0:
         return nx.Graph(), skeleton
     
-    # Построение графа через KD-Tree
     tree = cKDTree(yx)
     radius = config.get("GRAPH_CONNECT_RADIUS", 1.7)
     pairs = tree.query_pairs(r=radius)
@@ -298,95 +210,130 @@ def build_graph(skeleton: np.ndarray, config: dict) -> tuple:
         dist = float(np.linalg.norm(yx[i] - yx[j]))
         G.add_edge(n1, n2, weight=dist)
     
+    if len(G) and keep_only_largest:
+        largest = max(nx.connected_components(G), key=len)
+        G = G.subgraph(largest).copy()
+    
     return G, skeleton
 
-def connect_nearby_components(G: nx.Graph, max_dist: float, min_dist: float) -> nx.Graph:
-    """Соединяет близкие компоненты графа."""
+
+def connect_nearby_components(G: nx.Graph, max_dist: float, min_dist_to_connect: float) -> nx.Graph:
+    """
+    Соединяет близкие компоненты графа по концевым узлам.
+    Логика ТОЧНО как в локальном скрипте.
+    """
     if len(G) == 0 or nx.is_connected(G):
         return G
     
     components = list(nx.connected_components(G))
-    if len(components) < 2:
+    if len(components) <= 1:
         return G
     
-    # Центроиды компонент
-    centroids = []
-    for comp in components:
-        nodes = np.array(list(comp))
-        centroids.append(nodes.mean(axis=0))
-    centroids = np.array(centroids)
+    # Собираем концы (degree != 2) каждой компоненты
+    tips_per_comp = {}
+    for i, comp in enumerate(components):
+        subgraph = G.subgraph(comp)
+        tips = [n for n in subgraph if subgraph.degree(n) != 2]
+        if not tips:
+            tips = list(comp)[:1]
+        tips_per_comp[i] = tips
     
-    # Поиск пар для соединения
-    tree = cKDTree(centroids)
+    all_tips = []
+    for i, tips in tips_per_comp.items():
+        for tip in tips:
+            all_tips.append((tip, i))
+    
+    if len(all_tips) < 2:
+        return G
+    
+    coords = np.array([pt for pt, _ in all_tips])
+    tree = cKDTree(coords)
+    
+    to_add = []
+    used = set()
     pairs = tree.query_pairs(r=max_dist)
     
-    for i, j in pairs:
-        comp_i = list(components[i])
-        comp_j = list(components[j])
+    for idx1, idx2 in pairs:
+        pt1, comp1 = all_tips[idx1]
+        pt2, comp2 = all_tips[idx2]
         
-        # Находим ближайшие узлы между компонентами
-        min_d = float('inf')
-        best_pair = None
-        for ni in comp_i:
-            for nj in comp_j:
-                d = np.linalg.norm(np.array(ni) - np.array(nj))
-                if min_d < d < max_dist and d >= min_dist:
-                    min_d = d
-                    best_pair = (ni, nj)
+        if comp1 == comp2:
+            continue
         
-        if best_pair:
-            G.add_edge(best_pair[0], best_pair[1], weight=min_d)
+        dist = np.linalg.norm(np.array(pt1) - np.array(pt2))
+        if dist > max_dist or dist < min_dist_to_connect:
+            continue
+        
+        if idx1 not in used and idx2 not in used:
+            to_add.append((pt1, pt2, dist))
+            used.add(idx1)
+            used.add(idx2)
+    
+    for u, v, d in sorted(to_add, key=lambda x: x[2]):
+        G.add_edge(u, v, weight=d)
     
     return G
 
-def prune_small_branches(G: nx.Graph, min_length: int) -> nx.Graph:
-    """Удаляет короткие ветви графа."""
-    if min_length <= 0:
-        return G
-    
-    # Находим листья
-    leaves = [n for n, d in G.degree() if d == 1]
-    
-    # Для каждого листа идём пока не встретим узел степени != 2
-    to_remove = set()
-    for leaf in leaves:
-        path = [leaf]
-        current = leaf
-        while True:
-            neighbors = list(G.neighbors(current))
-            # Убираем предыдущий узел из соседей
-            if len(path) > 1:
-                neighbors = [n for n in neighbors if n != path[-2]]
-            
-            if len(neighbors) == 0:
-                break
-            if len(neighbors) > 1 or G.degree(neighbors[0]) != 2:
-                # Встретили разветвление или конец
-                if len(path) < min_length:
-                    to_remove.update(path)
-                break
-            
-            path.append(neighbors[0])
-            current = neighbors[0]
-    
-    if to_remove:
-        G = G.copy()
-        G.remove_nodes_from(to_remove)
-    
-    return G
 
-def save_debug_image(img: np.ndarray, prefix: str, config: dict):
-    """Сохраняет отладочное изображение."""
-    if not config.get("SAVE_DEBUG_STAGES", True):
+def get_color(cls_group: str, config: dict = None):
+    """Возвращает цвета для группы (как в локальном скрипте)."""
+    if config is None:
+        config = DEFAULT_CONFIG
+    return config["COLORS"].get(cls_group, config["COLORS"]["root"])
+
+
+def make_bbox_mask(shape, x1: int, y1: int, x2: int, y2: int) -> np.ndarray:
+    """Создаёт маску по bounding box."""
+    mask = np.zeros(shape[:2], dtype=bool)
+    mask[y1:y2, x1:x2] = True
+    return mask
+
+
+def save_debug_stages(name_prefix: str, base_img: np.ndarray, stages: list, config: dict):
+    """Сохраняет отладочные стадии."""
+    if not stages or not config.get("SAVE_DEBUG_STAGES", True):
         return
-    path = os.path.join(config["DEBUG_DIR"], f"{prefix}_{uuid.uuid4().hex[:8]}.png")
-    cv2.imwrite(path, img)
+    
+    h, w = base_img.shape[:2]
+    total_height = h * len(stages) + 40 * (len(stages) + 1)
+    debug_canvas = np.ones((total_height, w, 3), dtype=np.uint8) * 30
+    y_offset = 30
+    
+    for title, stage_img in stages:
+        if stage_img is None or stage_img.size == 0:
+            continue
+        if stage_img.dtype == bool:
+            stage_img = stage_img.astype(np.uint8) * 255
+        if len(stage_img.shape) == 2:
+            stage_img = cv2.cvtColor(stage_img, cv2.COLOR_GRAY2BGR)
+        if stage_img.shape[:2] != (h, w):
+            stage_img = cv2.resize(stage_img, (w, h), interpolation=cv2.INTER_AREA)
+        
+        debug_canvas[y_offset:y_offset + h, 0:w] = stage_img
+        cv2.putText(debug_canvas, title, (15, y_offset + 28),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.9, (255, 255, 255), 2)
+        y_offset += h + 40
+    
+    path = os.path.join(config["DEBUG_DIR"], f"DEBUG_{name_prefix}_stages.jpg")
+    cv2.imwrite(path, debug_canvas)
     print(f"🔍 Debug saved: {path}")
 
-# ============================================================================
-# КАЛИБРОВКА
-# ============================================================================
 
+def keep_longest_component(skeleton: np.ndarray) -> np.ndarray:
+    """Оставляет только самую длинную компоненту скелета."""
+    if not skeleton.any():
+        return skeleton
+    labeled = label(skeleton)
+    props = regionprops(labeled)
+    if not props:
+        return np.zeros_like(skeleton, dtype=bool)
+    longest = max(props, key=lambda x: x.area)
+    return labeled == longest.label
+
+
+# ============================================================================
+# КАЛИБРОВКА (без изменений)
+# ============================================================================
 def calibrate_single_image(image_path: str, square_size_mm: float = 25.0, 
                           chessboard_size: tuple = (7, 4), calib_flags: str = "fix_k3_k4_k5") -> dict:
     """Калибровка по одному изображению шахматки."""
@@ -756,181 +703,379 @@ async def calibrate_single(
     except Exception as e:
         traceback.print_exc()
         return JSONResponse(content={"status": "error", "message": f"Ошибка сервера: {str(e)}"}, status_code=500)
-
+    
 # ============================================================================
-# АНАЛИЗ РАСТЕНИЙ
+# 🌱 АНАЛИЗ РАСТЕНИЙ (СИНХРОНИЗИРОВАНО С ЛОКАЛЬНЫМ СКРИПТОМ)
 # ============================================================================
 
 def process_plant_image(input_path: str, output_path: str, config: dict) -> tuple:
-    """Основная функция анализа изображения растения."""
-    import time
+    """
+    Обрабатывает изображение растения — логика ТОЧНО как в локальном скрипте.
+    """
     start_time = time.time()
     
     img = cv2.imread(input_path)
     if img is None:
         raise ValueError(f"Не удалось прочитать: {input_path}")
     
-    # Предобработка
-    img = preprocess_image(img, config)
     vis_img = img.copy()
     
-    # Инициализация
-    masks = {g: np.zeros(img.shape[:2], bool) for g in ['root', 'stem', 'leaf']}
+    # Инициализация масок и статистики
+    masks = {g: np.zeros(img.shape[:2], dtype=bool) for g in ['root', 'stem', 'leaf']}
     areas = {g: 0 for g in ['root', 'stem', 'leaf']}
+    bbox_by_group = {g: None for g in ['root', 'stem', 'leaf']}
     lengths_px = {g: 0 for g in ['root', 'stem', 'leaf']}
     graph_stats = {g: {'nodes': 0, 'edges': 0} for g in ['root', 'stem', 'leaf']}
     
-    # Сегментация YOLO
+    # ─── YOLO сегментация (ПАРАМЕТРЫ ТОЧНО как в локальном скрипте) ─────────
     if model is not None:
         try:
-            imgsz = config.get("YOLO_IMG_SIZE", 1280)
-            conf_map = {'root': config["YOLO_CONF_ROOT"], 'stem': config["YOLO_CONF_STEM"], 'leaf': config["YOLO_CONF_LEAF"]}
+            imgsz = config.get("YOLO_IMG_SIZE", (1536, 2048))
+            conf_map = {
+                'root': config["YOLO_CONF_ROOT"],
+                'stem': config["YOLO_CONF_STEM"],
+                'leaf': config["YOLO_CONF_LEAF"]
+            }
             class_map = {'root': [0], 'stem': [1], 'leaf': [2]}
+            iou_val = config.get("YOLO_IOU", 0.50)
             
             for group in ['root', 'stem', 'leaf']:
                 results = model.predict(
-                    source=img, conf=conf_map[group], iou=config["YOLO_IOU"],
-                    imgsz=imgsz, retina_masks=True, classes=class_map[group],
-                    max_det=config.get("YOLO_MAX_DET", 1000), verbose=False
+                    source=img,
+                    conf=conf_map[group],
+                    iou=iou_val,
+                    imgsz=imgsz,
+                    retina_masks=config.get("YOLO_RETINA_MASKS", True),
+                    agnostic_nms=config.get("YOLO_AGNOSTIC_NMS", False),
+                    classes=class_map[group],
+                    max_det=config.get("YOLO_MAX_DET", 1000),
+                    verbose=False
                 )[0]
                 
                 if results.masks is not None:
-                    for msk in results.masks.data:
+                    for idx, (msk, box) in enumerate(zip(results.masks.data, results.boxes.xyxy)):
                         seg = msk.cpu().numpy() > 0.5
                         if seg.shape[:2] != img.shape[:2]:
-                            seg = cv2.resize(seg.astype(np.uint8), (img.shape[1], img.shape[0]), 
+                            seg = cv2.resize(seg.astype(np.uint8), (img.shape[1], img.shape[0]),
                                            interpolation=cv2.INTER_NEAREST).astype(bool)
-                        masks[group] |= seg
-                        areas[group] += int(seg.sum())
+                        
+                        cls_name = model.names[int(results.boxes.cls[idx])].lower()
+                        
+                        # Определяем группу по имени класса
+                        target_group = None
+                        if cls_name in config["ROOT_CLASSES"]:
+                            target_group = 'root'
+                        elif cls_name in config["STEM_CLASSES"]:
+                            target_group = 'stem'
+                        elif cls_name in config["LEAF_CLASSES"]:
+                            target_group = 'leaf'
+                        
+                        if target_group:
+                            masks[target_group] |= seg
+                            areas[target_group] += int(seg.sum())
+                            
+                            x1, y1, x2, y2 = map(int, box.cpu().numpy())
+                            if bbox_by_group[target_group] is None:
+                                bbox_by_group[target_group] = (x1, y1, x2, y2)
+                            else:
+                                ex1, ey1, ex2, ey2 = bbox_by_group[target_group]
+                                bbox_by_group[target_group] = (
+                                    min(ex1, x1), min(ey1, y1),
+                                    max(ex2, x2), max(ey2, y2)
+                                )
         except Exception as e:
             print(f"⚠️ YOLO ошибка: {e}")
     
-    # Обработка каждой группы
     debug_stages = []
     
-    for group in ['stem', 'leaf', 'root']:
-        if not np.any(masks[group]):
-            continue
+    # ─── ОБРАБОТКА: STEM ───────────────────────────────────────────────────
+    if masks['stem'].any():
+        crop_orig = img.copy()
+        stages = [("Original", crop_orig.copy()), ("Binary mask", masks['stem'])]
         
-        # Морфологическая очистка
-        mask_uint8 = masks[group].astype(np.uint8) * 255
-        ksize = config.get("MORPH_KERNEL_SIZE", 3)
-        kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (ksize, ksize))
+        skeleton = skeletonize(masks['stem'])
+        stages.append(("Full skeleton", skeleton))
         
-        if config.get("MORPH_ITER", 1) > 0:
-            mask_uint8 = cv2.morphologyEx(mask_uint8, cv2.MORPH_OPEN, kernel, iterations=config["MORPH_ITER"])
-        if config.get("MORPH_CLOSE_SIZE", 0) > 0:
-            kclose = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, 
-                                              (config["MORPH_CLOSE_SIZE"], config["MORPH_CLOSE_SIZE"]))
-            mask_uint8 = cv2.morphologyEx(mask_uint8, cv2.MORPH_CLOSE, kclose, iterations=1)
-        
-        # Удаление мелких объектов
-        min_size = config.get("COMBINED_MIN_SIZE", 60)
-        labeled = measure.label(mask_uint8 // 255)
-        props = measure.regionprops(labeled)
-        for prop in props:
-            if prop.area < min_size:
-                mask_uint8[labeled == prop.label] = 0
-        
-        # Удаление по эксцентриситету
-        ecc_thresh = config.get("NOISE_REMOVE_ECCENTRICITY", 0.99)
-        if ecc_thresh < 1.0:
-            for prop in props:
-                if prop.eccentricity > ecc_thresh and prop.area < min_size * 3:
-                    mask_uint8[labeled == prop.label] = 0
-        
-        masks[group] = mask_uint8 > 0
-        
-        # Скелетизация
-        skeleton = skeletonize(masks[group])
-        
-        # Построение графа
+        # Удаление малых компонент ПЕРЕД финальным построением графа
         G_temp, _ = build_graph(skeleton, config)
-        
-        # Удаление малых компонент
-        small_comps = [c for c in nx.connected_components(G_temp) 
-                      if len(c) < config.get("REMOVE_SMALL_COMP_SIZE", 30)]
-        skeleton_cleaned = skeleton.copy()
+        small_comps = [c for c in nx.connected_components(G_temp)
+                    if len(c) < config.get("REMOVE_SMALL_COMP_SIZE", 30)]
         for comp in small_comps:
             for node in comp:
-                skeleton_cleaned[node[1], node[0]] = False
+                skeleton[node[1], node[0]] = False  # обнуляем пиксели в скелете
         
-        G, _ = build_graph(skeleton_cleaned, config)
-        
-        # Обрезка ветвей
-        G = prune_small_branches(G, config.get("GRAPH_PRUNE_BRANCHES", 5))
+        # ПЕРЕСТРОЕНИЕ графа после очистки скелета
+        G, _ = build_graph(skeleton, config)
         
         # Соединение компонент
-        max_d = config["ROOT_CONNECT_MAX_DIST"] if group == 'root' else config["STEM_LEAF_CONNECT_MAX_DIST"]
-        min_d = config["ROOT_CONNECT_MIN_DIST"] if group == 'root' else config["STEM_LEAF_CONNECT_MIN_DIST"]
-        G = connect_nearby_components(G, max_d, min_d)
+        G = connect_nearby_components(G,
+                                    config["STEM_LEAF_CONNECT_MAX_DIST"],
+                                    config["STEM_LEAF_CONNECT_MIN_DIST"])
         
-        # Очистка корней от мусора
-        if group == 'root' and len(G) > 0 and not nx.is_connected(G):
-            anchor_points = []
-            
-            if np.any(masks.get('stem', False)):
-                props = measure.regionprops(measure.label(masks['stem'].astype(np.uint8)))
-                if props:
-                    largest = max(props, key=lambda x: x.area)
-                    anchor_points.append((largest.centroid[1], largest.centroid[0]))
-            
-            if np.any(masks.get('leaf', False)):
-                props = measure.regionprops(measure.label(masks['leaf'].astype(np.uint8)))
-                if props:
-                    largest = max(props, key=lambda x: x.area)
-                    anchor_points.append((largest.centroid[1], largest.centroid[0]))
-            
-            if anchor_points:
-                keep_comps = []
-                for comp in nx.connected_components(G):
-                    nodes = np.array(list(comp))
-                    for anchor in anchor_points:
-                        if np.min(np.linalg.norm(nodes - np.array(anchor), axis=1)) < config.get("ROOT_ANCHOR_MAX_DIST", 50):
-                            keep_comps.append(comp)
-                            break
-                
-                if keep_comps:
-                    keep_nodes = set().union(*keep_comps)
-                    G = G.subgraph(keep_nodes).copy()
-            else:
-                largest = max(nx.connected_components(G), key=len)
-                G = G.subgraph(largest).copy()
+        total_len = sum(d['weight'] for _, _, d in G.edges(data=True))
+        lengths_px['stem'] = int(total_len)
+        graph_stats['stem'] = {'nodes': len(G.nodes()), 'edges': len(G.edges())}
         
-        # Подсчёт длины
-        total_len = sum(d.get('weight', np.linalg.norm(np.array(u) - np.array(v))) 
-                       for u, v, d in G.edges(data=True))
-        lengths_px[group] = int(total_len)
-        
-        # Статистика графа
-        graph_stats[group] = {'nodes': len(G.nodes()), 'edges': len(G.edges())}
-        
-        # Отрисовка
-        color = DEFAULT_CONFIG["COLORS"].get(group, {'edge': (255,255,255)})
-        thickness = config.get("EDGE_THICKNESS", 2)
-        
+        # ─── ОТРИСОВКА DEBUG (как в локальном: радиусы 6/3) ────────────────
+        crop_graph = crop_orig.copy()
+        color = get_color('stem', config)
         for u, v, d in G.edges(data=True):
-            cv2.line(vis_img, u, v, color['edge'], thickness)
+            cv2.line(crop_graph, u, v, color['edge'], 2)
+        for node in G.nodes():
+            # В локальном скрипте для debug: end=6, mid=3
+            r = 6 if G.degree(node) != 2 else 3
+            c = color['node_end'] if G.degree(node) != 2 else color['node_mid']
+            cv2.circle(crop_graph, node, r, c, -1)
+        stages.append((f"Final graph L:{int(total_len)} px", crop_graph))
         
-        if config.get("DRAW_NODE_LABELS", "none") != "none":
-            font_size = config.get("FONT_SIZE", 12)
-            for node in G.nodes():
-                deg = G.degree(node)
-                c = color.get('node_end', (255,0,0)) if deg != 2 else color.get('node_mid', (0,255,0))
-                r = config["NODE_END_RADIUS"] if deg != 2 else config["NODE_MID_RADIUS"]
-                cv2.circle(vis_img, node, r, c, -1)
-                
-                if config["DRAW_NODE_LABELS"] in ["degree", "both"]:
-                    cv2.putText(vis_img, str(deg), (node[0]+8, node[1]-8), 
-                               cv2.FONT_HERSHEY_SIMPLEX, font_size/20, (255,255,255), 1)
+        save_debug_stages("stem", crop_orig, stages, config)
         
-        # Debug
-        if config.get("SAVE_INTERMEDIATE") == "all":
-            debug_stages.append((f"{group}_mask", (masks[group].astype(np.uint8) * 255)))
-            debug_stages.append((f"{group}_skeleton", (skeleton.astype(np.uint8) * 255)))
+        # ─── ФИНАЛЬНАЯ ОТРИСОВКА на vis_img (радиусы 5/2 как в локальном) ──
+        for u, v, d in G.edges(data=True):
+            cv2.line(vis_img, u, v, color['edge'], config["EDGE_THICKNESS"])
+        for node in G.nodes():
+            r = 5 if G.degree(node) != 2 else 2  # как в локальном скрипте
+            c = color['node_end'] if G.degree(node) != 2 else color['node_mid']
+            cv2.circle(vis_img, node, r, c, -1)
+        
+        if bbox_by_group['stem']:
+            x1, y1, x2, y2 = bbox_by_group['stem']
+            info = f"stem | L:{int(total_len)} px | N:{G.number_of_nodes()}"
+            cv2.putText(vis_img, info, (x1, max(y1 - 25, 15)),
+                        cv2.FONT_HERSHEY_SIMPLEX, config["FONT_SIZE"], (255, 255, 255), 2)
     
-    # Сохранение результата
-    output_format = config.get("OUTPUT_FORMAT", "png")
+    # ─── ОБРАБОТКА: LEAF ────────────────────────────────────────────────────
+    if masks['leaf'].any():
+        crop_orig = img.copy()
+        stages = [("Original", crop_orig.copy()), ("Binary mask", masks['leaf'])]
+        
+        skeleton = skeletonize(masks['leaf'])
+        stages.append(("Full skeleton", skeleton))
+        stages.append(("Longest component", skeleton))
+        
+        # В локальном скрипте для leaf НЕТ удаления малых компонент перед connect!
+        G, _ = build_graph(skeleton, config)
+        
+        # Соединение компонент
+        G = connect_nearby_components(G,
+                                    config["STEM_LEAF_CONNECT_MAX_DIST"],
+                                    config["STEM_LEAF_CONNECT_MIN_DIST"])
+        
+        total_len = sum(d['weight'] for _, _, d in G.edges(data=True))
+        lengths_px['leaf'] = int(total_len)
+        graph_stats['leaf'] = {'nodes': len(G.nodes()), 'edges': len(G.edges())}
+        
+        # ─── ОТРИСОВКА DEBUG (радиусы 6/3 как в локальном) ─────────────────
+        crop_graph = crop_orig.copy()
+        color = get_color('leaf', config)
+        for u, v, d in G.edges(data=True):
+            cv2.line(crop_graph, u, v, color['edge'], 2)
+        for node in G.nodes():
+            r = 6 if G.degree(node) != 2 else 3  # как в локальном
+            c = color['node_end'] if G.degree(node) != 2 else color['node_mid']
+            cv2.circle(crop_graph, node, r, c, -1)
+        stages.append((f"Final graph L:{int(total_len)} px", crop_graph))
+        
+        save_debug_stages("leaf", crop_orig, stages, config)
+        
+        # ─── ФИНАЛЬНАЯ ОТРИСОВКА (радиусы 5/2) ─────────────────────────────
+        for u, v, d in G.edges(data=True):
+            cv2.line(vis_img, u, v, color['edge'], config["EDGE_THICKNESS"])
+        for node in G.nodes():
+            r = 5 if G.degree(node) != 2 else 2  # как в локальном
+            c = color['node_end'] if G.degree(node) != 2 else color['node_mid']
+            cv2.circle(vis_img, node, r, c, -1)
+        
+        if bbox_by_group['leaf']:
+            x1, y1, x2, y2 = bbox_by_group['leaf']
+            info = f"leaf | L:{int(total_len)} px | N:{G.number_of_nodes()}"
+            cv2.putText(vis_img, info, (x1, max(y1 - 25, 15)),
+                        cv2.FONT_HERSHEY_SIMPLEX, config["FONT_SIZE"], (255, 255, 255), 2)
+    
+    if masks['root'].any():
+        seg_mask = masks['root']
+        stages = [("Original", img.copy())]
+        
+        mask_uint8 = (seg_mask).astype(np.uint8) * 255
+        stages.append(("YOLO mask", mask_uint8.copy()))
+        
+        # Морфология
+        kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE,
+                                        (config["MORPH_KERNEL_SIZE"], config["MORPH_KERNEL_SIZE"]))
+        mask_smooth = cv2.morphologyEx(mask_uint8, cv2.MORPH_OPEN, kernel,
+                                    iterations=config["MORPH_ITER"])
+        stages.append(("Smoothed mask", mask_smooth.copy()))
+        
+        skeleton_raw = skeletonize(mask_smooth > 0)
+        stages.append(("Skeleton raw", skeleton_raw.copy()))
+        
+        # Удаление малых компонент
+        G_temp, _ = build_graph(skeleton_raw, config)
+        small_comps = [c for c in nx.connected_components(G_temp)
+                    if len(c) < config.get("REMOVE_SMALL_COMP_SIZE", 30)]
+        for comp in small_comps:
+            for node in comp:
+                skeleton_raw[node[1], node[0]] = False
+        
+        skeleton_cleaned = skeleton_raw.copy()
+        stages.append(("Skeleton cleaned", skeleton_cleaned.copy()))
+        
+        G, _ = build_graph(skeleton_raw, config)
+        
+        graph_before = img.copy()
+        for u, v in G.edges():
+            cv2.line(graph_before, u, v, (255, 0, 180), 1)
+        stages.append(("Graph before connect", graph_before))
+        
+        # Соединение компонент
+        G = connect_nearby_components(G,
+                                    config["ROOT_CONNECT_MAX_DIST"],
+                                    config["ROOT_CONNECT_MIN_DIST"])
+        
+    
+        # ✅ 1. Собираем якоря из ГРАФОВ стебля и листа (по компонентам!)
+        anchor_points = []
+        dist_threshold = 100
+
+        # --- СТЕБЛЬ ---
+        if masks['stem'].any():
+            stem_skel = skeletonize(masks['stem'])
+            G_stem, _ = build_graph(stem_skel, config)
+            if len(G_stem) > 0:
+                for comp in nx.connected_components(G_stem):
+                    comp_nodes = np.array(list(comp))
+                    if len(comp_nodes) > 0:
+                        cx, cy = np.mean(comp_nodes, axis=0)
+                        anchor_points.append((float(cx), float(cy)))
+        
+        # --- ЛИСТ ---
+        if masks['leaf'].any():
+            leaf_skel = skeletonize(masks['leaf'])
+            G_leaf, _ = build_graph(leaf_skel, config)
+            if len(G_leaf) > 0:
+                for comp in nx.connected_components(G_leaf):
+                    comp_nodes = np.array(list(comp))
+                    if len(comp_nodes) > 0:
+                        cx, cy = np.mean(comp_nodes, axis=0)
+                        anchor_points.append((float(cx), float(cy)))
+        
+        # ✅ 2. Фильтрация графа корней (G)
+        if anchor_points and len(G) > 0:
+            keep_comps = []
+            remove_comps = []
+            
+            for comp in nx.connected_components(G):
+                comp_nodes = np.array(list(comp))
+                is_near_anchor = False
+                
+                for anchor in anchor_points:
+                    dists = np.linalg.norm(comp_nodes - np.array(anchor), axis=1)
+                    if dists.min() < dist_threshold:
+                        is_near_anchor = True
+                        break
+                
+                if is_near_anchor:
+                    keep_comps.append(comp)
+                else:
+                    remove_comps.append(comp)
+            
+            # ✅ 3. Если нашли компоненты рядом с якорем — оставляем ВСЕ их
+            if keep_comps:
+                keep_nodes = set().union(*keep_comps)
+                G = G.subgraph(keep_nodes).copy()
+                print(f"   [root] kept {len(keep_comps)} components near anchors, removed {len(remove_comps)} far")
+            else:
+                # ⚠️ НИ ОДНОЙ компоненты рядом — НЕ удаляем всё, а оставляем ВСЕ компоненты корней!
+                # (или можно оставить топ-N по размеру, но не одну)
+                print(f"   [root] no components near anchors, keeping ALL {len(list(nx.connected_components(G)))} components")
+                # G остаётся без изменений
+        elif len(G) > 0:
+            # Нет якорей — оставляем ВСЕ компоненты корней (не одну!)
+            n_comps = len(list(nx.connected_components(G)))
+            print(f"   [root] no anchors, keeping ALL {n_comps} components")
+            # G остаётся без изменений
+
+
+        # ─── РАСЧЁТ ДЛИНЫ ───────────────────────────────────────────────────
+        total_len = sum(d.get('weight', np.linalg.norm(np.array(u) - np.array(v)))
+                    for u, v, d in G.edges(data=True))
+        lengths_px['root'] = int(total_len)
+        graph_stats['root'] = {'nodes': len(G.nodes()), 'edges': len(G.edges())}
+        
+        # Отрисовка debug
+        graph_after = img.copy()
+        color = get_color('root', config)
+        for u, v, d in G.edges(data=True):
+            cv2.line(graph_after, u, v, color['edge'], 2)
+        for node in G.nodes():
+            deg = G.degree(node)
+            r = 4 if deg != 2 else 2
+            c = color['node_end'] if deg != 2 else color['node_mid']
+            cv2.circle(graph_after, node, r, c, -1)
+        stages.append((f"Final graph L:{int(total_len)} px", graph_after))
+        
+        save_debug_stages("root", img.copy(), stages, config)
+        
+        # Отрисовка на финальное изображение
+        for u, v, d in G.edges(data=True):
+            cv2.line(vis_img, u, v, color['edge'], config["EDGE_THICKNESS"])
+        for node in G.nodes():
+            deg = G.degree(node)
+            r = 4 if deg != 2 else 2
+            c = color['node_end'] if deg != 2 else color['node_mid']
+            cv2.circle(vis_img, node, r, c, -1)
+        
+        # Подпись длины корней — ✅ FONT_SIZE = 0.6 как в локальном!
+        labeled = meas.label(seg_mask.astype(bool))
+        props = meas.regionprops(labeled)
+        if props:
+            main_p = max(props, key=lambda x: x.area)
+            cy_c, cx_c = main_p.centroid
+            cv2.putText(vis_img, f"Roots: {int(total_len)} px", (int(cx_c), int(cy_c)),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 2)
+        
+        # Bounding box
+        if bbox_by_group['root']:
+            x1, y1, x2, y2 = bbox_by_group['root']
+            cv2.rectangle(vis_img, (x1, y1), (x2, y2), (0, 140, 255), 2)
+
+    # ─── ОТРИСОВКА ПЛОЩАДЕЙ И МАСОК (как в локальном скрипте) ─────────────
+    overlay = vis_img.copy()
+    for group_name, mask_bool in [('leaf', masks['leaf']), ('stem', masks['stem']), ('root', masks['root'])]:
+        if np.any(mask_bool):
+            color = config["COLORS"][group_name]['edge']
+            overlay[mask_bool] = color
+    
+    alpha = 0.3
+    cv2.addWeighted(overlay, alpha, vis_img, 1 - alpha, 0, vis_img)
+    
+    # Панель статистики
+    padding = 20
+    line_height = 40
+    panel_width = 450
+    panel_height = line_height * 4 + padding
+    margin = 30
+    
+    overlay = vis_img.copy()
+    cv2.rectangle(overlay, (margin, margin), (margin + panel_width, margin + panel_height), (0, 0, 0), -1)
+    cv2.addWeighted(overlay, 0.6, vis_img, 0.4, 0, vis_img)
+    
+    stats = [
+        (f"Roots Area: {areas['root']:,} px", config["COLORS"]["root"]["edge"]),
+        (f"Stem Area:  {areas['stem']:,} px", config["COLORS"]["stem"]["edge"]),
+        (f"Leaf Area:  {areas['leaf']:,} px", config["COLORS"]["leaf"]["edge"]),
+        (f"Total Area: {sum(areas.values()):,} px", (255, 255, 255))
+    ]
+    
+    for i, (text, color) in enumerate(stats):
+        y_pos = margin + padding + (i * line_height) + 10
+        cv2.putText(vis_img, text, (margin + 15, y_pos), cv2.FONT_HERSHEY_SIMPLEX,
+                    0.9, (0, 0, 0), 4, cv2.LINE_AA)
+        cv2.putText(vis_img, text, (margin + 15, y_pos), cv2.FONT_HERSHEY_SIMPLEX,
+                    0.9, color, 2, cv2.LINE_AA)
+    
+    # ─── СОХРАНЕНИЕ ─────────────────────────────────────────────────────────
+    output_format = config.get("OUTPUT_FORMAT", "jpg")
     if output_format == "jpg":
         cv2.imwrite(output_path, vis_img, [cv2.IMWRITE_JPEG_QUALITY, 95])
     elif output_format == "webp":
@@ -938,26 +1083,7 @@ def process_plant_image(input_path: str, output_path: str, config: dict) -> tupl
     else:
         cv2.imwrite(output_path, vis_img)
     
-    # Сохранение debug
-    if debug_stages and config.get("SAVE_DEBUG_STAGES"):
-        h, w = img.shape[:2]
-        canvas_h = h * len(debug_stages) + 40 * (len(debug_stages) + 1)
-        canvas = np.ones((canvas_h, w, 3), np.uint8) * 30
-        y_off = 30
-        for title, stage_img in debug_stages:
-            if stage_img.dtype == bool:
-                stage_img = stage_img.astype(np.uint8) * 255
-            if len(stage_img.shape) == 2:
-                stage_img = cv2.cvtColor(stage_img, cv2.COLOR_GRAY2BGR)
-            if stage_img.shape[:2] != (h, w):
-                stage_img = cv2.resize(stage_img, (w, h))
-            canvas[y_off:y_off+h, :w] = stage_img
-            cv2.putText(canvas, title, (15, y_off+28), cv2.FONT_HERSHEY_SIMPLEX, 0.9, (255,255,255), 2)
-            y_off += h + 40
-        debug_path = os.path.join(config["DEBUG_DIR"], f"debug_{uuid.uuid4().hex[:8]}.png")
-        cv2.imwrite(debug_path, canvas)
-    
-    # Масштаб
+    # Статистика
     ppm = config.get("pixels_per_mm") or pixels_per_mm
     if ppm and ppm > 0:
         scale_cm_px = 1.0 / ppm / 10.0
@@ -966,10 +1092,6 @@ def process_plant_image(input_path: str, output_path: str, config: dict) -> tupl
     
     lengths_cm = {k: round(v * scale_cm_px, 2) for k, v in lengths_px.items() if v > 0}
     
-    # Статистика
-    total_nodes = sum(gs['nodes'] for gs in graph_stats.values())
-    total_edges = sum(gs['edges'] for gs in graph_stats.values())
-    
     stats = {
         "areas": {k: int(v) for k, v in areas.items()},
         "lengths_px": {k: int(v) for k, v in lengths_px.items()},
@@ -977,8 +1099,6 @@ def process_plant_image(input_path: str, output_path: str, config: dict) -> tupl
         "graph_stats": to_json_serializable(graph_stats),
         "total_area_px": int(sum(areas.values())),
         "total_length_px": int(sum(lengths_px.values())),
-        "total_nodes": int(total_nodes),
-        "total_edges": int(total_edges),
         "model_loaded": model is not None,
         "calibrated": ppm is not None and ppm > 0,
         "pixels_per_mm": float(ppm) if ppm else None,
@@ -994,7 +1114,6 @@ async def analyze_plant(file: UploadFile = File(...), params: str = Form("{}")):
         if not file.content_type or not file.content_type.startswith("image/"):
             return JSONResponse(content={"error": "Только изображения"}, status_code=400)
         
-        # Сохранение файла
         ext = Path(file.filename).suffix.lower()
         if ext not in ['.jpg', '.jpeg', '.png', '.webp']:
             ext = '.jpg'
@@ -1006,7 +1125,6 @@ async def analyze_plant(file: UploadFile = File(...), params: str = Form("{}")):
         with open(input_path, "wb") as f:
             shutil.copyfileobj(file.file, f)
         
-        # Парсинг параметров
         user_cfg = {}
         if params:
             try:
@@ -1014,11 +1132,9 @@ async def analyze_plant(file: UploadFile = File(...), params: str = Form("{}")):
             except:
                 pass
         
-        # Объединение конфигураций
         proc_cfg = DEFAULT_CONFIG.copy()
         proc_cfg.update(user_cfg)
         
-        # Обработка
         res_path, stats = process_plant_image(input_path, output_path, proc_cfg)
         
         response = {
@@ -1026,17 +1142,12 @@ async def analyze_plant(file: UploadFile = File(...), params: str = Form("{}")):
             "image_url": f"/results/{Path(res_path).name}",
             "stats": stats
         }
-        
         return JSONResponse(content=to_json_serializable(response))
-        
+    
     except Exception as e:
         traceback.print_exc()
         return JSONResponse(content={"error": str(e), "status": "error"}, status_code=500)
 
-
-# ============================================================================
-# ROOT ENDPOINT
-# ============================================================================
 
 @app.get("/")
 async def root():
@@ -1046,10 +1157,9 @@ async def root():
     return {"message": "Plant Graph Analyzer API", "endpoints": ["/", "/analyze/", "/calibrate-single/"]}
 
 
-# ============================================================================
-# ЗАПУСК
-# ============================================================================
 
+
+    
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(

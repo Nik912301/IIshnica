@@ -1,731 +1,581 @@
 <!DOCTYPE html>
 <html lang="ru">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>Анализ растений — корни / стебель / листья</title>
-  <style>
-    :root {
-      --bg: #0f0f15;
-      --card: #1a1a2e;
-      --accent: #aaffaa;
-      --text: #e0e0ff;
-      --border: #444;
-      --success: #88ff88;
-      --error: #ff5555;
-      --warning: #ffaa44;
-      --input-bg: #222;
-      --input-border: #555;
-      --section-bg: rgba(255,255,255,0.03);
-    }
-    * { box-sizing: border-box; }
-    body {
-      margin: 0;
-      padding: 20px;
-      background: var(--bg);
-      color: var(--text);
-      font-family: system-ui, -apple-system, sans-serif;
-      line-height: 1.5;
-    }
-    .container { max-width: 1200px; margin: 0 auto; }
-    h1, h2 { color: var(--accent); text-align: center; margin: 0 0 16px; }
-    h1 { font-size: 1.8rem; margin-bottom: 32px; }
-    h2 { font-size: 1.4rem; border-bottom: 1px solid var(--border); padding-bottom: 12px; }
-    h3 { color: var(--accent); font-size: 1.1rem; margin: 20px 0 12px; }
-    
-    .block {
-      background: var(--card);
-      padding: 24px;
-      border-radius: 12px;
-      margin: 24px 0;
-      border: 1px solid var(--border);
-    }
-    
-    /* Drop zone */
-    .drop-zone {
-      border: 3px dashed var(--border);
-      border-radius: 12px;
-      padding: 50px 20px;
-      text-align: center;
-      background: rgba(0,0,0,0.2);
-      transition: all 0.25s ease;
-      cursor: pointer;
-      margin: 20px 0;
-    }
-    .drop-zone:hover, .drop-zone.active {
-      border-color: var(--success);
-      background: rgba(80,180,80,0.12);
-      box-shadow: 0 0 25px rgba(136,255,136,0.25);
-    }
-    .drop-zone h3 { margin: 0 0 8px; color: var(--accent); }
-    .drop-zone p { margin: 0; opacity: 0.8; font-size: 0.95rem; }
-    
-    /* Loading & status */
-    .loading {
-      color: var(--warning);
-      font-size: 1.2rem;
-      text-align: center;
-      margin: 20px;
-      display: none;
-      animation: pulse 1.5s infinite;
-    }
-    @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.6; } }
-    
-    .status {
-      padding: 12px 16px;
-      border-radius: 8px;
-      margin: 16px 0;
-      font-weight: 500;
-      display: none;
-    }
-    .status.show { display: block; }
-    .status.success { background: #1a331a; color: var(--success); border: 1px solid #3a3; }
-    .status.error   { background: #331a1a; color: var(--error); border: 1px solid #a33; }
-    .status.warning { background: #332a1a; color: var(--warning); border: 1px solid #aa5; }
-    
-    /* Images */
-    img.preview {
-      max-width: 100%; max-height: 50vh; margin: 16px auto;
-      border: 1px solid var(--border); border-radius: 8px;
-      display: none; background: #000;
-    }
-    img.preview.show { display: block; }
-    
-    /* Tables */
-    table {
-      width: 100%; border-collapse: collapse; margin-top: 16px;
-      background: rgba(0,0,0,0.15); border-radius: 8px; overflow: hidden;
-    }
-    th, td { padding: 12px 16px; text-align: left; border-bottom: 1px solid var(--border); }
-    th { color: var(--success); background: rgba(0,0,0,0.2); font-weight: 600; text-transform: uppercase; font-size: 0.85rem; letter-spacing: 0.5px; }
-    tr:last-child td { border-bottom: none; }
-    tr:hover { background: rgba(255,255,255,0.03); }
-    
-    /* Buttons */
-    button {
-      background: linear-gradient(135deg, #2d5a2d, #3d7a3d); color: white;
-      border: none; padding: 12px 28px; font-size: 1rem; font-weight: 500;
-      border-radius: 8px; cursor: pointer; margin: 12px 0;
-      transition: all 0.2s ease; box-shadow: 0 2px 8px rgba(0,0,0,0.3);
-    }
-    button:hover { background: linear-gradient(135deg, #3d7a3d, #4d9a4d); transform: translateY(-1px); box-shadow: 0 4px 12px rgba(0,0,0,0.4); }
-    button:active { transform: translateY(0); }
-    button:disabled { opacity: 0.6; cursor: not-allowed; transform: none; }
-    button.secondary { background: linear-gradient(135deg, #444, #555); }
-    button.secondary:hover { background: linear-gradient(135deg, #555, #666); }
-    button.small { padding: 6px 14px; font-size: 0.9rem; margin: 4px 2px; }
-    
-    /* Parameters */
-    .param-group {
-      margin-bottom: 28px; padding-bottom: 20px;
-      border-bottom: 1px dashed var(--border);
-    }
-    .param-group:last-child { border-bottom: none; margin-bottom: 0; padding-bottom: 0; }
-    .param-group h4 { margin: 0 0 16px; color: var(--accent); font-size: 1.1rem; }
-    .param-subgroup {
-      background: var(--section-bg);
-      padding: 12px 16px;
-      border-radius: 8px;
-      margin: 12px 0;
-      border-left: 3px solid var(--accent);
-    }
-    .param-subgroup h5 {
-      margin: 0 0 10px;
-      color: var(--text);
-      font-size: 1rem;
-      opacity: 0.9;
-    }
-    .param-row {
-      display: flex; align-items: center; gap: 16px; margin: 8px 0; flex-wrap: wrap;
-    }
-    .param-row label {
-      flex: 0 0 240px; text-align: right; font-size: 0.9rem; color: var(--text);
-    }
-    .param-row input, .param-row select {
-      flex: 1; max-width: 120px; padding: 8px 10px; border-radius: 6px;
-      border: 1px solid var(--input-border); background: var(--input-bg);
-      color: white; font-size: 0.9rem; transition: border-color 0.2s;
-    }
-    .param-row input:focus, .param-row select:focus {
-      outline: none; border-color: var(--accent);
-      box-shadow: 0 0 0 3px rgba(170,255,170,0.15);
-    }
-    .param-row input[type=number] { -moz-appearance: textfield; }
-    .param-row input::-webkit-outer-spin-button,
-    .param-row input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
-    .param-row .hint {
-      font-size: 0.8rem; opacity: 0.7; margin-left: 8px; color: var(--warning);
-    }
-    
-    /* Collapsible section */
-    .collapsible {
-      background: var(--section-bg);
-      border-radius: 8px;
-      margin: 16px 0;
-      overflow: hidden;
-    }
-    .collapsible-header {
-      padding: 12px 16px;
-      cursor: pointer;
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      user-select: none;
-      transition: background 0.2s;
-    }
-    .collapsible-header:hover { background: rgba(255,255,255,0.05); }
-    .collapsible-header::after {
-      content: '▼'; font-size: 0.8rem; transition: transform 0.2s;
-    }
-    .collapsible-header.active::after { transform: rotate(180deg); }
-    .collapsible-content {
-      padding: 0 16px 16px;
-      max-height: 0;
-      overflow: hidden;
-      transition: max-height 0.3s ease, padding 0.3s ease;
-    }
-    .collapsible-content.show {
-      max-height: 2000px;
-      padding: 12px 16px 16px;
-    }
-    
-    /* Scale info */
-    .scale-info {
-      background: rgba(136,255,136,0.08);
-      border: 1px solid rgba(136,255,136,0.3);
-      border-radius: 8px;
-      padding: 12px 16px;
-      margin: 16px 0;
-      font-size: 0.95rem;
-      display: none;
-    }
-    .scale-info.show { display: block; }
-    .scale-info strong { color: var(--success); }
-    
-    /* Hidden utility */
-    .hidden { display: none !important; }
-    
-    /* Responsive */
-    @media (max-width: 768px) {
-      .param-row { flex-direction: column; align-items: flex-start; gap: 8px; }
-      .param-row label { text-align: left; flex: none; }
-      .param-row input, .param-row select { max-width: 100%; width: 100%; }
-      body { padding: 12px; }
-      .block { padding: 18px; }
-    }
-  </style>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Анализ растений — корни / стебель / листья</title>
+<style>
+:root {
+--bg: #0f0f15;
+--card: #1a1a2e;
+--accent: #aaffaa;
+--text: #e0e0ff;
+--border: #444;
+--success: #88ff88;
+--error: #ff5555;
+--warning: #ffaa44;
+--input-bg: #222;
+--input-border: #555;
+--section-bg: rgba(255,255,255,0.03);
+}
+* { box-sizing: border-box; }
+body {
+margin: 0;
+padding: 20px;
+background: var(--bg);
+color: var(--text);
+font-family: system-ui, -apple-system, sans-serif;
+line-height: 1.5;
+}
+.container { max-width: 1200px; margin: 0 auto; }
+h1, h2 { color: var(--accent); text-align: center; margin: 0 0 16px; }
+h1 { font-size: 1.8rem; margin-bottom: 32px; }
+h2 { font-size: 1.4rem; border-bottom: 1px solid var(--border); padding-bottom: 12px; }
+h3 { color: var(--accent); font-size: 1.1rem; margin: 20px 0 12px; }
+.block {
+background: var(--card);
+padding: 24px;
+border-radius: 12px;
+margin: 24px 0;
+border: 1px solid var(--border);
+}
+.drop-zone {
+border: 3px dashed var(--border);
+border-radius: 12px;
+padding: 50px 20px;
+text-align: center;
+background: rgba(0,0,0,0.2);
+transition: all 0.25s ease;
+cursor: pointer;
+margin: 20px 0;
+}
+.drop-zone:hover, .drop-zone.active {
+border-color: var(--success);
+background: rgba(80,180,80,0.12);
+box-shadow: 0 0 25px rgba(136,255,136,0.25);
+}
+.drop-zone h3 { margin: 0 0 8px; color: var(--accent); }
+.drop-zone p { margin: 0; opacity: 0.8; font-size: 0.95rem; }
+.loading {
+color: var(--warning);
+font-size: 1.2rem;
+text-align: center;
+margin: 20px;
+display: none;
+animation: pulse 1.5s infinite;
+}
+@keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.6; } }
+.status {
+padding: 12px 16px;
+border-radius: 8px;
+margin: 16px 0;
+font-weight: 500;
+display: none;
+}
+.status.show { display: block; }
+.status.success { background: #1a331a; color: var(--success); border: 1px solid #3a3; }
+.status.error   { background: #331a1a; color: var(--error); border: 1px solid #a33; }
+.status.warning { background: #332a1a; color: var(--warning); border: 1px solid #aa5; }
+img.preview {
+max-width: 100%; max-height: 50vh; margin: 16px auto;
+border: 1px solid var(--border); border-radius: 8px;
+display: none; background: #000;
+}
+img.preview.show { display: block; }
+table {
+width: 100%; border-collapse: collapse; margin-top: 16px;
+background: rgba(0,0,0,0.15); border-radius: 8px; overflow: hidden;
+}
+th, td { padding: 12px 16px; text-align: left; border-bottom: 1px solid var(--border); }
+th { color: var(--success); background: rgba(0,0,0,0.2); font-weight: 600; text-transform: uppercase; font-size: 0.85rem; letter-spacing: 0.5px; }
+tr:last-child td { border-bottom: none; }
+tr:hover { background: rgba(255,255,255,0.03); }
+button {
+background: linear-gradient(135deg, #2d5a2d, #3d7a3d); color: white;
+border: none; padding: 12px 28px; font-size: 1rem; font-weight: 500;
+border-radius: 8px; cursor: pointer; margin: 12px 0;
+transition: all 0.2s ease; box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+}
+button:hover { background: linear-gradient(135deg, #3d7a3d, #4d9a4d); transform: translateY(-1px); box-shadow: 0 4px 12px rgba(0,0,0,0.4); }
+button:active { transform: translateY(0); }
+button:disabled { opacity: 0.6; cursor: not-allowed; transform: none; }
+button.secondary { background: linear-gradient(135deg, #444, #555); }
+button.secondary:hover { background: linear-gradient(135deg, #555, #666); }
+button.small { padding: 6px 14px; font-size: 0.9rem; margin: 4px 2px; }
+.param-group {
+margin-bottom: 28px; padding-bottom: 20px;
+border-bottom: 1px dashed var(--border);
+}
+.param-group:last-child { border-bottom: none; margin-bottom: 0; padding-bottom: 0; }
+.param-group h4 { margin: 0 0 16px; color: var(--accent); font-size: 1.1rem; }
+.param-subgroup {
+background: var(--section-bg);
+padding: 12px 16px;
+border-radius: 8px;
+margin: 12px 0;
+border-left: 3px solid var(--accent);
+}
+.param-subgroup h5 {
+margin: 0 0 10px;
+color: var(--text);
+font-size: 1rem;
+opacity: 0.9;
+}
+.param-row {
+display: flex; align-items: center; gap: 16px; margin: 8px 0; flex-wrap: wrap;
+}
+.param-row label {
+flex: 0 0 240px; text-align: right; font-size: 0.9rem; color: var(--text);
+}
+.param-row input, .param-row select {
+flex: 1; max-width: 120px; padding: 8px 10px; border-radius: 6px;
+border: 1px solid var(--input-border); background: var(--input-bg);
+color: white; font-size: 0.9rem; transition: border-color 0.2s;
+}
+.param-row input:focus, .param-row select:focus {
+outline: none; border-color: var(--accent);
+box-shadow: 0 0 0 3px rgba(170,255,170,0.15);
+}
+.param-row input[type=number] { -moz-appearance: textfield; }
+.param-row input::-webkit-outer-spin-button,
+.param-row input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+.param-row .hint {
+font-size: 0.8rem; opacity: 0.7; margin-left: 8px; color: var(--warning);
+}
+.collapsible {
+background: var(--section-bg);
+border-radius: 8px;
+margin: 16px 0;
+overflow: hidden;
+}
+.collapsible-header {
+padding: 12px 16px;
+cursor: pointer;
+display: flex;
+justify-content: space-between;
+align-items: center;
+user-select: none;
+transition: background 0.2s;
+}
+.collapsible-header:hover { background: rgba(255,255,255,0.05); }
+.collapsible-header::after {
+content: '▼'; font-size: 0.8rem; transition: transform 0.2s;
+}
+.collapsible-header.active::after { transform: rotate(180deg); }
+.collapsible-content {
+padding: 0 16px 16px;
+max-height: 0;
+overflow: hidden;
+transition: max-height 0.3s ease, padding 0.3s ease;
+}
+.collapsible-content.show {
+max-height: 2000px;
+padding: 12px 16px 16px;
+}
+.scale-info {
+background: rgba(136,255,136,0.08);
+border: 1px solid rgba(136,255,136,0.3);
+border-radius: 8px;
+padding: 12px 16px;
+margin: 16px 0;
+font-size: 0.95rem;
+display: none;
+}
+.scale-info.show { display: block; }
+.scale-info strong { color: var(--success); }
+.hidden { display: none !important; }
+@media (max-width: 768px) {
+.param-row { flex-direction: column; align-items: flex-start; gap: 8px; }
+.param-row label { text-align: left; flex: none; }
+.param-row input, .param-row select { max-width: 100%; width: 100%; }
+body { padding: 12px; }
+.block { padding: 18px; }
+}
+</style>
 </head>
 <body>
-
 <div class="container">
-  <h1>🌱 Анализ растений — корни / стебель / листья</h1>
+<h1>🌱 Анализ растений — корни / стебель / листья</h1>
 
-  <!-- 🔹 КАЛИБРОВКА -->
-  <div class="block" id="calibration-block">
-    <h2>📐 Калибровка по фото шахматки</h2>
-    <p style="text-align:center;opacity:0.85;margin-bottom:20px;">
-      Загрузите чёткое фото калибровочной шахматной доски → сервер вычислит масштаб и устранит дисторсию
-    </p>
+<!-- 🔹 КАЛИБРОВКА -->
+<div class="block" id="calibration-block">
+<h2>📐 Калибровка по фото шахматки</h2>
+<p style="text-align:center;opacity:0.85;margin-bottom:20px;">
+Загрузите чёткое фото калибровочной шахматной доски → сервер вычислит масштаб и устранит дисторсию
+</p>
+<div id="calib-drop-zone" class="drop-zone">
+<h3>📁 Перетащите фото сюда или кликните</h3>
+<p>Поддерживаются: JPG, PNG, WebP</p>
+<input type="file" accept="image/*" id="calib-file-input" style="display:none">
+</div>
+<div id="calib-loading" class="loading">⏳ Загрузка и калибровка...</div>
+<div id="calib-status" class="status"></div>
+<div id="calib-scale-info" class="scale-info">
+📏 Масштаб: <strong id="calib-ppmm">—</strong> px/mm
+(<strong id="calib-mmpx">—</strong> мм/px)
+<br><small style="opacity:0.8">RMS ошибка: <span id="calib-rms">—</span></small>
+</div>
+<img id="calib-result-img" class="preview" alt="Визуализация калибровки">
+<div style="text-align:center;margin-top:16px;">
+<button id="calib-btn" onclick="runSingleCalibration()">🚀 Запустить калибровку</button>
+<button class="secondary" onclick="resetCalibration()">🔄 Сбросить</button>
+</div>
 
-    <div id="calib-drop-zone" class="drop-zone">
-      <h3>📁 Перетащите фото сюда или кликните</h3>
-      <p>Поддерживаются: JPG, PNG, WebP</p>
-      <input type="file" accept="image/*" id="calib-file-input" style="display:none">
-    </div>
+<!-- Параметры калибровки -->
+<div class="collapsible" style="margin-top:20px;">
+<div class="collapsible-header" onclick="toggleCollapsible(this)">
+<span>⚙️ Параметры калибровки</span>
+</div>
+<div class="collapsible-content">
+<div class="param-subgroup">
+<h5>📐 Шахматная доска</h5>
+<div class="param-row">
+<label for="chessboard-cols">Квадратов по горизонтали</label>
+<input type="number" id="chessboard-cols" value="8" min="3" max="20">
+</div>
+<div class="param-row">
+<label for="chessboard-rows">Квадратов по вертикали</label>
+<input type="number" id="chessboard-rows" value="5" min="3" max="20">
+</div>
+<div class="param-row">
+<label for="square-size-mm">Размер квадрата (мм)</label>
+<input type="number" id="square-size-mm" value="25" min="1" max="100" step="0.5">
+</div>
+</div>
+<div class="param-subgroup">
+<h5>🔧 Алгоритм калибровки</h5>
+<div class="param-row">
+<label for="calib-flags">Флаги OpenCV</label>
+<select id="calib-flags">
+<option value="fix_k3_k4_k5">FIX_K3, K4, K5 (рекомендуется)</option>
+<option value="fix_k3">Только FIX_K3</option>
+<option value="none">Без фиксаций</option>
+<option value="rational">Rational model</option>
+</select>
+</div>
+<div class="param-row">
+<label for="calib-alpha">Alpha (crop)</label>
+<input type="number" id="calib-alpha" value="1.0" min="0" max="1" step="0.1">
+<span class="hint">0 = обрезать, 1 = сохранить всё</span>
+</div>
+</div>
+</div>
+</div>
+</div>
 
-    <div id="calib-loading" class="loading">⏳ Загрузка и калибровка...</div>
-    <div id="calib-status" class="status"></div>
-    
-    <div id="calib-scale-info" class="scale-info">
-      📏 Масштаб: <strong id="calib-ppmm">—</strong> px/mm 
-      (<strong id="calib-mmpx">—</strong> мм/px)
-      <br><small style="opacity:0.8">RMS ошибка: <span id="calib-rms">—</span></small>
-    </div>
+<!-- 🔹 ПАРАМЕТРЫ -->
+<div class="block">
+<h2>⚙️ Параметры распознавания</h2>
 
-    <img id="calib-result-img" class="preview" alt="Визуализация калибровки">
+<!-- YOLO -->
+<div class="param-group">
+<h4>🎯 YOLO детекция</h4>
+<div class="param-subgroup">
+<h5>Пороги уверенности</h5>
+<div class="param-row">
+<label for="YOLO_CONF_ROOT">Root (корни)</label>
+<input type="number" step="0.001" min="0.001" max="1" id="YOLO_CONF_ROOT" value="0.1">
+</div>
+<div class="param-row">
+<label for="YOLO_CONF_STEM">Stem (стебель)</label>
+<input type="number" step="0.01" min="0.01" max="1" id="YOLO_CONF_STEM" value="0.10">
+</div>
+<div class="param-row">
+<label for="YOLO_CONF_LEAF">Leaf (листья)</label>
+<input type="number" step="0.01" min="0.01" max="1" id="YOLO_CONF_LEAF" value="0.30">
+</div>
+</div>
+<div class="param-subgroup">
+<h5>Дополнительные параметры YOLO</h5>
+<div class="param-row">
+<label for="YOLO_IOU_THRESH">IoU threshold (NMS)</label>
+<input type="number" step="0.01" min="0.1" max="0.9" id="YOLO_IOU_THRESH" value="0.50">
+</div>
+<div class="param-row">
+<label for="YOLO_IMG_SIZE_W">Размер входа: ширина</label>
+<input type="number" id="YOLO_IMG_SIZE_W" value="2048" min="640" max="4096" step="64">
+</div>
+<div class="param-row">
+<label for="YOLO_IMG_SIZE_H">Размер входа: высота</label>
+<input type="number" id="YOLO_IMG_SIZE_H" value="1536" min="640" max="4096" step="64">
+</div>
+<div class="param-row">
+<label for="YOLO_MAX_DET">Макс. детекций на класс</label>
+<input type="number" id="YOLO_MAX_DET" value="1000" min="10" max="5000">
+</div>
+<div class="param-row">
+<label for="YOLO_RETINA_MASKS">Retina masks</label>
+<select id="YOLO_RETINA_MASKS">
+<option value="true" selected>Включено</option>
+<option value="false">Отключено</option>
+</select>
+</div>
+<div class="param-row">
+<label for="YOLO_AGNOSTIC_NMS">Agnostic NMS</label>
+<select id="YOLO_AGNOSTIC_NMS">
+<option value="false" selected>Отключено</option>
+<option value="true">Включено</option>
+</select>
+</div>
+</div>
+</div>
 
-    <div style="text-align:center;margin-top:16px;">
-      <button id="calib-btn" onclick="runSingleCalibration()">🚀 Запустить калибровку</button>
-      <button class="secondary" onclick="resetCalibration()">🔄 Сбросить</button>
-    </div>
-    
-    <!-- Параметры калибровки -->
-    <div class="collapsible" style="margin-top:20px;">
-      <div class="collapsible-header" onclick="toggleCollapsible(this)">
-        <span>⚙️ Параметры калибровки</span>
-      </div>
-      <div class="collapsible-content">
-        <div class="param-subgroup">
-          <h5>📐 Шахматная доска</h5>
-          <div class="param-row">
-            <label for="chessboard-cols">Квадратов по горизонтали</label>
-            <input type="number" id="chessboard-cols" value="8" min="3" max="20">
-          </div>
-          <div class="param-row">
-            <label for="chessboard-rows">Квадратов по вертикали</label>
-            <input type="number" id="chessboard-rows" value="5" min="3" max="20">
-          </div>
-          <div class="param-row">
-            <label for="square-size-mm">Размер квадрата (мм)</label>
-            <input type="number" id="square-size-mm" value="25" min="1" max="100" step="0.5">
-          </div>
-        </div>
-        <div class="param-subgroup">
-          <h5>🔧 Алгоритм калибровки</h5>
-          <div class="param-row">
-            <label for="calib-flags">Флаги OpenCV</label>
-            <select id="calib-flags">
-              <option value="fix_k3_k4_k5">FIX_K3, K4, K5 (рекомендуется)</option>
-              <option value="fix_k3">Только FIX_K3</option>
-              <option value="none">Без фиксаций</option>
-              <option value="rational">Rational model</option>
-            </select>
-          </div>
-          <div class="param-row">
-            <label for="calib-alpha">Alpha (crop)</label>
-            <input type="number" id="calib-alpha" value="1.0" min="0" max="1" step="0.1">
-            <span class="hint">0 = обрезать, 1 = сохранить всё</span>
-          </div>
-        </div>
-      </div>
-    </div>
-  </div>
+<!-- Предобработка изображения -->
+<div class="param-group">
+<h4>🖼️ Предобработка изображения</h4>
+<div class="param-subgroup">
+<h5>Изменение размера и качество</h5>
+<div class="param-row">
+<label for="IMG_MAX_WIDTH">Макс. ширина (px)</label>
+<input type="number" id="IMG_MAX_WIDTH" value="2048" min="512" max="4096">
+</div>
+<div class="param-row">
+<label for="IMG_MAX_HEIGHT">Макс. высота (px)</label>
+<input type="number" id="IMG_MAX_HEIGHT" value="1536" min="512" max="4096">
+</div>
+<div class="param-row">
+<label for="IMG_INTERPOLATION">Интерполяция</label>
+<select id="IMG_INTERPOLATION">
+<option value="linear">Bilinear (быстро)</option>
+<option value="cubic" selected>Bicubic (качество)</option>
+<option value="area">Area (уменьшение)</option>
+<option value="lanczos">Lanczos (лучшее)</option>
+</select>
+</div>
+</div>
+<div class="param-subgroup">
+<h5>Фильтрация и улучшение</h5>
+<div class="param-row">
+<label for="PREPROC_BLUR">Blur kernel size</label>
+<input type="number" id="PREPROC_BLUR" value="0" min="0" max="15" step="2">
+<span class="hint">0 = без размытия</span>
+</div>
+<div class="param-row">
+<label for="PREPROC_CONTRAST">Контраст (CLAHE)</label>
+<input type="number" id="PREPROC_CONTRAST" value="2.0" min="1" max="10" step="0.5">
+</div>
+<div class="param-row">
+<label for="PREPROC_DENOISE">Denoise strength</label>
+<input type="number" id="PREPROC_DENOISE" value="0" min="0" max="20" step="1">
+<span class="hint">0 = отключено</span>
+</div>
+</div>
+</div>
 
-  <!-- 🔹 ПАРАМЕТРЫ -->
-  <div class="block">
-    <h2>⚙️ Параметры распознавания</h2>
+<!-- Граф и скелетизация -->
+<div class="param-group">
+<h4>🕸️ Граф и скелетизация</h4>
+<div class="param-subgroup">
+<h5>Параметры графа</h5>
+<div class="param-row">
+<label for="GRAPH_CONNECT_RADIUS">Радиус соединения узлов</label>
+<input type="number" step="0.1" min="0.1" id="GRAPH_CONNECT_RADIUS" value="1.7">
+</div>
+<div class="param-row">
+<label for="GRAPH_MAX_NODES">Макс. узлов в графе</label>
+<input type="number" id="GRAPH_MAX_NODES" value="38000">
+</div>
+<div class="param-row">
+<label for="REMOVE_SMALL_COMP_SIZE">Удалять компоненты &lt;</label>
+<input type="number" min="1" id="REMOVE_SMALL_COMP_SIZE" value="40">
+<span class="hint">узлов</span>
+</div>
+</div>
+</div>
 
-    <!-- YOLO -->
-    <div class="param-group">
-      <h4>🎯 YOLO детекция</h4>
-      <div class="param-subgroup">
-        <h5>Пороги уверенности</h5>
-        <div class="param-row">
-          <label for="YOLO_CONF_ROOT">Root (корни)</label>
-          <input type="number" step="0.001" min="0.001" max="1" id="YOLO_CONF_ROOT" value="0.001">
-        </div>
-        <div class="param-row">
-          <label for="YOLO_CONF_STEM">Stem (стебель)</label>
-          <input type="number" step="0.01" min="0.01" max="1" id="YOLO_CONF_STEM" value="0.10">
-        </div>
-        <div class="param-row">
-          <label for="YOLO_CONF_LEAF">Leaf (листья)</label>
-          <input type="number" step="0.01" min="0.01" max="1" id="YOLO_CONF_LEAF" value="0.30">
-        </div>
-      </div>
-      <div class="param-subgroup">
-        <h5>Дополнительные параметры YOLO</h5>
-        <div class="param-row">
-          <label for="YOLO_IOU_THRESH">IoU threshold (NMS)</label>
-          <input type="number" step="0.01" min="0.1" max="0.9" id="YOLO_IOU_THRESH" value="0.45">
-        </div>
-        <div class="param-row">
-          <label for="YOLO_IMG_SIZE">Размер входа модели</label>
-          <select id="YOLO_IMG_SIZE">
-            <option value="640">640×640 (быстро)</option>
-            <option value="1280" selected>1280×1280 (баланс)</option>
-            <option value="1920">1920×1920 (точно)</option>
-          </select>
-        </div>
-        <div class="param-row">
-          <label for="YOLO_MAX_DET">Макс. детекций на класс</label>
-          <input type="number" id="YOLO_MAX_DET" value="1000" min="10" max="5000">
-        </div>
-        <div class="param-row">
-          <label for="YOLO_AUGMENT">Аугментация</label>
-          <select id="YOLO_AUGMENT">
-            <option value="none">Отключена</option>
-            <option value="light" selected>Лёгкая</option>
-            <option value="full">Полная</option>
-          </select>
-        </div>
-      </div>
-    </div>
+<!-- Соединение компонент -->
+<div class="param-group">
+<h4>🔗 Соединение компонент</h4>
+<div class="param-subgroup">
+<h5>Корни (Root)</h5>
+<div class="param-row">
+<label for="ROOT_CONNECT_MAX_DIST">Max dist (соединение)</label>
+<input type="number" min="1" id="ROOT_CONNECT_MAX_DIST" value="60">
+</div>
+<div class="param-row">
+<label for="ROOT_CONNECT_MIN_DIST">Min dist</label>
+<input type="number" step="0.1" min="0.1" id="ROOT_CONNECT_MIN_DIST" value="4.0">
+</div>
+<div class="param-row">
+<label for="ROOT_ANCHOR_MAX_DIST">Anchor max dist (очистка)</label>
+<input type="number" id="ROOT_ANCHOR_MAX_DIST" value="10" min="5" max="100">
+</div>
+</div>
+<div class="param-subgroup">
+<h5>Стебель / Листья</h5>
+<div class="param-row">
+<label for="STEM_LEAF_CONNECT_MAX_DIST">Max dist</label>
+<input type="number" min="1" id="STEM_LEAF_CONNECT_MAX_DIST" value="5">
+</div>
+<div class="param-row">
+<label for="STEM_LEAF_CONNECT_MIN_DIST">Min dist</label>
+<input type="number" step="0.1" min="0.1" id="STEM_LEAF_CONNECT_MIN_DIST" value="1.0">
+</div>
+</div>
+</div>
 
-    <!-- Предобработка изображения -->
-    <div class="param-group">
-      <h4>🖼️ Предобработка изображения</h4>
-      <div class="param-subgroup">
-        <h5>Изменение размера и качество</h5>
-        <div class="param-row">
-          <label for="IMG_MAX_WIDTH">Макс. ширина (px)</label>
-          <input type="number" id="IMG_MAX_WIDTH" value="2048" min="512" max="4096">
-        </div>
-        <div class="param-row">
-          <label for="IMG_MAX_HEIGHT">Макс. высота (px)</label>
-          <input type="number" id="IMG_MAX_HEIGHT" value="2048" min="512" max="4096">
-        </div>
-        <div class="param-row">
-          <label for="IMG_INTERPOLATION">Интерполяция</label>
-          <select id="IMG_INTERPOLATION">
-            <option value="linear">Bilinear (быстро)</option>
-            <option value="cubic" selected>Bicubic (качество)</option>
-            <option value="area">Area (уменьшение)</option>
-            <option value="lanczos">Lanczos (лучшее)</option>
-          </select>
-        </div>
-      </div>
-      <div class="param-subgroup">
-        <h5>Фильтрация и улучшение</h5>
-        <div class="param-row">
-          <label for="PREPROC_BLUR">Blur kernel size</label>
-          <input type="number" id="PREPROC_BLUR" value="0" min="0" max="15" step="2">
-          <span class="hint">0 = без размытия</span>
-        </div>
-        <div class="param-row">
-          <label for="PREPROC_CONTRAST">Контраст (CLAHE)</label>
-          <input type="number" id="PREPROC_CONTRAST" value="2.0" min="1" max="10" step="0.5">
-        </div>
-        <div class="param-row">
-          <label for="PREPROC_DENOISE">Denoise strength</label>
-          <input type="number" id="PREPROC_DENOISE" value="0" min="0" max="20" step="1">
-          <span class="hint">0 = отключено</span>
-        </div>
-        <div class="param-row">
-          <label for="PREPROC_ADAPTIVE">Адаптивный порог</label>
-          <select id="PREPROC_ADAPTIVE">
-            <option value="none">Отключено</option>
-            <option value="gaussian" selected>Gaussian</option>
-            <option value="mean">Mean</option>
-          </select>
-        </div>
-      </div>
-    </div>
+<!-- Морфология -->
+<div class="param-group">
+<h4>🧹 Морфология и очистка</h4>
+<div class="param-subgroup">
+<h5>Операции над маской</h5>
+<div class="param-row">
+<label for="COMBINED_MIN_SIZE">Мин. размер объектов</label>
+<input type="number" min="1" id="COMBINED_MIN_SIZE" value="60">
+<span class="hint">px²</span>
+</div>
+<div class="param-row">
+<label for="MORPH_KERNEL_SIZE">Kernel size (открытие)</label>
+<input type="number" min="1" max="15" id="MORPH_KERNEL_SIZE" value="3">
+</div>
+<div class="param-row">
+<label for="MORPH_CLOSE_SIZE">Kernel size (закрытие)</label>
+<input type="number" min="0" max="15" id="MORPH_CLOSE_SIZE" value="0">
+<span class="hint">0 = отключено</span>
+</div>
+<div class="param-row">
+<label for="MORPH_ITER">Итераций морфологии</label>
+<input type="number" min="1" max="10" id="MORPH_ITER" value="1">
+</div>
+</div>
+<div class="param-subgroup">
+<h5>Очистка шума</h5>
+<div class="param-row">
+<label for="NOISE_REMOVE_ECCENTRICITY">Max эксцентриситет</label>
+<input type="number" step="0.01" min="0" max="1" id="NOISE_REMOVE_ECCENTRICITY" value="0.99">
+</div>
+</div>
+</div>
 
-    <!-- Граф и скелетизация -->
-    <div class="param-group">
-      <h4>🕸️ Граф и скелетизация</h4>
-      <div class="param-subgroup">
-        <h5>Построение скелета</h5>
-        <div class="param-row">
-          <label for="SKELETON_METHOD">Метод</label>
-          <select id="SKELETON_METHOD">
-            <option value="zhang" selected>Zhang-Suen (быстро)</option>
-            <option value="lee">Lee (точно)</option>
-            <option value="thin">Morphological thinning</option>
-          </select>
-        </div>
-        <div class="param-row">
-          <label for="SKELETON_ITER">Макс. итераций</label>
-          <input type="number" id="SKELETON_ITER" value="100" min="1" max="500">
-        </div>
-      </div>
-      <div class="param-subgroup">
-        <h5>Параметры графа</h5>
-        <div class="param-row">
-          <label for="GRAPH_CONNECT_RADIUS">Радиус соединения узлов</label>
-          <input type="number" step="0.1" min="0.1" id="GRAPH_CONNECT_RADIUS" value="1.7">
-        </div>
-        <div class="param-row">
-          <label for="GRAPH_MAX_NODES">Макс. узлов в графе</label>
-          <input type="number" id="GRAPH_MAX_NODES" value="38000">
-        </div>
-        <div class="param-row">
-          <label for="REMOVE_SMALL_COMP_SIZE">Удалять компоненты &lt;</label>
-          <input type="number" min="1" id="REMOVE_SMALL_COMP_SIZE" value="30">
-        </div>
-        <div class="param-row">
-          <label for="GRAPH_PRUNE_BRANCHES">Обрезать ветви &lt;</label>
-          <input type="number" id="GRAPH_PRUNE_BRANCHES" value="5" min="0" max="50">
-          <span class="hint">узлов</span>
-        </div>
-      </div>
-    </div>
+<!-- Отрисовка -->
+<div class="param-group">
+<h4>🎨 Отрисовка результата</h4>
+<div class="param-subgroup">
+<h5>Стиль графа</h5>
+<div class="param-row">
+<label for="EDGE_THICKNESS">Толщина рёбер</label>
+<input type="number" min="1" id="EDGE_THICKNESS" value="2">
+</div>
+<div class="param-row">
+<label for="NODE_END_RADIUS_SL">Радиус узлов (stem/leaf): конец</label>
+<input type="number" min="1" id="NODE_END_RADIUS_SL" value="5">
+</div>
+<div class="param-row">
+<label for="NODE_MID_RADIUS_SL">Радиус узлов (stem/leaf): середина</label>
+<input type="number" min="1" id="NODE_MID_RADIUS_SL" value="2">
+</div>
+<div class="param-row">
+<label for="NODE_END_RADIUS_ROOT">Радиус узлов (root): конец</label>
+<input type="number" min="1" id="NODE_END_RADIUS_ROOT" value="4">
+</div>
+<div class="param-row">
+<label for="NODE_MID_RADIUS_ROOT">Радиус узлов (root): середина</label>
+<input type="number" min="1" id="NODE_MID_RADIUS_ROOT" value="2">
+</div>
+<div class="param-row">
+<label for="DRAW_NODE_LABELS">Подписывать узлы</label>
+<select id="DRAW_NODE_LABELS">
+<option value="none" selected>Нет</option>
+<option value="degree">Степень</option>
+<option value="both">Оба</option>
+</select>
+</div>
+</div>
+<div class="param-subgroup">
+<h5>Дополнительно</h5>
+<div class="param-row">
+<label for="FONT_SIZE">Размер шрифта</label>
+<input type="number" step="0.1" min="0.1" max="2" id="FONT_SIZE" value="0.7">
+</div>
+<div class="param-row">
+<label for="OUTPUT_FORMAT">Формат вывода</label>
+<select id="OUTPUT_FORMAT">
+<option value="png">PNG</option>
+<option value="jpg" selected>JPG</option>
+<option value="webp">WebP</option>
+</select>
+</div>
+</div>
+</div>
 
-    <!-- Соединение компонент -->
-    <div class="param-group">
-      <h4>🔗 Соединение компонент</h4>
-      <div class="param-subgroup">
-        <h5>Корни (Root)</h5>
-        <div class="param-row">
-          <label for="ROOT_CONNECT_MAX_DIST">Max dist (соединение)</label>
-          <input type="number" min="1" id="ROOT_CONNECT_MAX_DIST" value="50">
-        </div>
-        <div class="param-row">
-          <label for="ROOT_CONNECT_MIN_DIST">Min dist</label>
-          <input type="number" step="0.1" min="0.1" id="ROOT_CONNECT_MIN_DIST" value="4.0">
-        </div>
-        <div class="param-row">
-          <label for="ROOT_ANCHOR_MAX_DIST">Anchor max dist (очистка)</label>
-          <input type="number" id="ROOT_ANCHOR_MAX_DIST" value="50" min="10" max="200">
-        </div>
-        <div class="param-row">
-          <label for="ROOT_MIN_SIZE_RATIO">Min size ratio</label>
-          <input type="number" step="0.01" min="0.01" max="1" id="ROOT_MIN_SIZE_RATIO" value="0.1">
-          <span class="hint">% от крупнейшей</span>
-        </div>
-      </div>
-      <div class="param-subgroup">
-        <h5>Стебель / Листья</h5>
-        <div class="param-row">
-          <label for="STEM_LEAF_CONNECT_MAX_DIST">Max dist</label>
-          <input type="number" min="1" id="STEM_LEAF_CONNECT_MAX_DIST" value="5">
-        </div>
-        <div class="param-row">
-          <label for="STEM_LEAF_CONNECT_MIN_DIST">Min dist</label>
-          <input type="number" step="0.1" min="0.1" id="STEM_LEAF_CONNECT_MIN_DIST" value="1.0">
-        </div>
-        <div class="param-row">
-          <label for="STEM_LEAF_ANGLE_THRESH">Max угол соединения</label>
-          <input type="number" id="STEM_LEAF_ANGLE_THRESH" value="45" min="0" max="90">
-          <span class="hint">градусов</span>
-        </div>
-      </div>
-    </div>
+<!-- Расширенные параметры -->
+<div class="collapsible">
+<div class="collapsible-header" onclick="toggleCollapsible(this)">
+<span>🔬 Расширенные параметры</span>
+</div>
+<div class="collapsible-content">
+<div class="param-subgroup">
+<h5>Производительность</h5>
+<div class="param-row">
+<label for="USE_GPU">Использовать GPU</label>
+<select id="USE_GPU">
+<option value="auto" selected>Авто</option>
+<option value="true">Да</option>
+<option value="false">Нет</option>
+</select>
+</div>
+<div class="param-row">
+<label for="SAVE_DEBUG_STAGES">Сохранять debug-этапы</label>
+<select id="SAVE_DEBUG_STAGES">
+<option value="true" selected>Да</option>
+<option value="false">Нет</option>
+</select>
+</div>
+</div>
+</div>
+</div>
 
-    <!-- Морфология -->
-    <div class="param-group">
-      <h4>🧹 Морфология и очистка</h4>
-      <div class="param-subgroup">
-        <h5>Операции над маской</h5>
-        <div class="param-row">
-          <label for="COMBINED_MIN_SIZE">Мин. размер объектов</label>
-          <input type="number" min="1" id="COMBINED_MIN_SIZE" value="60">
-        </div>
-        <div class="param-row">
-          <label for="MORPH_KERNEL_SIZE">Kernel size (открытие)</label>
-          <input type="number" min="1" max="15" id="MORPH_KERNEL_SIZE" value="3">
-        </div>
-        <div class="param-row">
-          <label for="MORPH_CLOSE_SIZE">Kernel size (закрытие)</label>
-          <input type="number" min="0" max="15" id="MORPH_CLOSE_SIZE" value="0">
-          <span class="hint">0 = отключено</span>
-        </div>
-        <div class="param-row">
-          <label for="MORPH_ITER">Итераций морфологии</label>
-          <input type="number" min="1" max="10" id="MORPH_ITER" value="1">
-        </div>
-      </div>
-      <div class="param-subgroup">
-        <h5>Очистка шума</h5>
-        <div class="param-row">
-          <label for="NOISE_REMOVE_AREA">Удалять объекты &lt;</label>
-          <input type="number" id="NOISE_REMOVE_AREA" value="20" min="1" max="500">
-          <span class="hint">px²</span>
-        </div>
-        <div class="param-row">
-          <label for="NOISE_REMOVE_ECCENTRICITY">Max эксцентриситет</label>
-          <input type="number" step="0.01" min="0" max="1" id="NOISE_REMOVE_ECCENTRICITY" value="0.99">
-          <span class="hint">1 = любые формы</span>
-        </div>
-      </div>
-    </div>
+</div>
 
-    <!-- Отрисовка -->
-    <div class="param-group">
-      <h4>🎨 Отрисовка результата</h4>
-      <div class="param-subgroup">
-        <h5>Стиль графа</h5>
-        <div class="param-row">
-          <label for="EDGE_THICKNESS">Толщина рёбер</label>
-          <input type="number" min="1" id="EDGE_THICKNESS" value="2">
-        </div>
-        <div class="param-row">
-          <label for="NODE_END_RADIUS">Радиус конечных узлов</label>
-          <input type="number" min="1" id="NODE_END_RADIUS" value="5">
-        </div>
-        <div class="param-row">
-          <label for="NODE_MID_RADIUS">Радиус средних узлов</label>
-          <input type="number" min="1" id="NODE_MID_RADIUS" value="2">
-        </div>
-        <div class="param-row">
-          <label for="DRAW_NODE_LABELS">Подписывать узлы</label>
-          <select id="DRAW_NODE_LABELS">
-            <option value="none">Нет</option>
-            <option value="id">ID</option>
-            <option value="degree" selected>Степень</option>
-            <option value="both">Оба</option>
-          </select>
-        </div>
-      </div>
-      <div class="param-subgroup">
-        <h5>Дополнительно</h5>
-        <div class="param-row">
-          <label for="FONT_SIZE">Размер шрифта</label>
-          <input type="number" min="6" max="24" id="FONT_SIZE" value="12">
-        </div>
-        <div class="param-row">
-          <label for="DRAW_BOUNDING_BOX">Рисовать bbox</label>
-          <select id="DRAW_BOUNDING_BOX">
-            <option value="none">Нет</option>
-            <option value="yolo" selected>YOLO детекции</option>
-            <option value="all">Все объекты</option>
-          </select>
-        </div>
-        <div class="param-row">
-          <label for="OUTPUT_FORMAT">Формат вывода</label>
-          <select id="OUTPUT_FORMAT">
-            <option value="png" selected>PNG (качество)</option>
-            <option value="jpg">JPG (меньше)</option>
-            <option value="webp">WebP (баланс)</option>
-          </select>
-        </div>
-      </div>
-    </div>
+<!-- 🔹 АНАЛИЗ РАСТЕНИЯ -->
+<div class="block">
+<h2>🔬 Анализ изображения растения</h2>
+<div id="drop-zone" class="drop-zone">
+<h3>📷 Перетащите фото растения сюда или кликните</h3>
+<p>Поддерживаются: JPG, PNG, WebP</p>
+<input type="file" accept="image/*" id="plant-file-input" style="display:none">
+</div>
+<div id="plant-loading" class="loading">⏳ Обработка изображения...</div>
+<div id="plant-status" class="status"></div>
+<img id="plant-preview" class="preview" alt="Оригинал">
+<img id="plant-result" class="preview" alt="Результат анализа">
 
-    <!-- Расширенные параметры (скрытые по умолчанию) -->
-    <div class="collapsible">
-      <div class="collapsible-header" onclick="toggleCollapsible(this)">
-        <span>🔬 Расширенные параметры</span>
-      </div>
-      <div class="collapsible-content">
-        <div class="param-subgroup">
-          <h5>Параллелизм и производительность</h5>
-          <div class="param-row">
-            <label for="MAX_WORKERS">Макс. потоков</label>
-            <input type="number" id="MAX_WORKERS" value="4" min="1" max="16">
-          </div>
-          <div class="param-row">
-            <label for="BATCH_SIZE">Batch size (YOLO)</label>
-            <input type="number" id="BATCH_SIZE" value="1" min="1" max="32">
-          </div>
-          <div class="param-row">
-            <label for="USE_GPU">Использовать GPU</label>
-            <select id="USE_GPU">
-              <option value="auto" selected>Авто</option>
-              <option value="true">Да</option>
-              <option value="false">Нет</option>
-            </select>
-          </div>
-        </div>
-        <div class="param-subgroup">
-          <h5>Отладка и логирование</h5>
-          <div class="param-row">
-            <label for="DEBUG_MODE">Режим отладки</label>
-            <select id="DEBUG_MODE">
-              <option value="off" selected>Выключен</option>
-              <option value="minimal">Минимальный</option>
-              <option value="full">Полный</option>
-            </select>
-          </div>
-          <div class="param-row">
-            <label for="SAVE_INTERMEDIATE">Сохранять промежуточные</label>
-            <select id="SAVE_INTERMEDIATE">
-              <option value="none">Нет</option>
-              <option value="masks">Только маски</option>
-              <option value="all" selected>Все этапы</option>
-            </select>
-          </div>
-          <div class="param-row">
-            <label for="LOG_LEVEL">Уровень логов</label>
-            <select id="LOG_LEVEL">
-              <option value="info">Info</option>
-              <option value="debug" selected>Debug</option>
-              <option value="warning">Warning</option>
-              <option value="error">Error</option>
-            </select>
-          </div>
-        </div>
-        <div class="param-subgroup">
-          <h5>Экспорт данных</h5>
-          <div class="param-row">
-            <label for="EXPORT_FORMAT">Формат экспорта</label>
-            <select id="EXPORT_FORMAT">
-              <option value="json" selected>JSON</option>
-              <option value="csv">CSV</option>
-              <option value="both">JSON + CSV</option>
-            </select>
-          </div>
-          <div class="param-row">
-            <label for="EXPORT_GRAPHML">Экспорт графа (GraphML)</label>
-            <select id="EXPORT_GRAPHML">
-              <option value="false" selected>Нет</option>
-              <option value="true">Да</option>
-            </select>
-          </div>
-          <div class="param-row">
-            <label for="EXPORT_COORDS">Экспорт координат узлов</label>
-            <select id="EXPORT_COORDS">
-              <option value="false">Нет</option>
-              <option value="true" selected>Да</option>
-            </select>
-          </div>
-        </div>
-      </div>
-    </div>
-  </div>
+<div id="stats" class="hidden">
+<h3 style="color:var(--accent);margin-top:24px;">📊 Результаты анализа</h3>
+<table>
+<thead>
+<tr><th>Часть</th><th>Площадь (px²)</th><th>Длина (px)</th><th>Длина (см)*</th><th>Узлов</th><th>Рёбер</th></tr>
+</thead>
+<tbody>
+<tr><td><strong>🌿 Корни</strong></td><td id="root-area">—</td><td id="root-len-px">—</td><td id="root-len-cm">—</td><td id="root-nodes">—</td><td id="root-edges">—</td></tr>
+<tr><td><strong>🪴 Стебель</strong></td><td id="stem-area">—</td><td id="stem-len-px">—</td><td id="stem-len-cm">—</td><td id="stem-nodes">—</td><td id="stem-edges">—</td></tr>
+<tr><td><strong>🍃 Листья</strong></td><td id="leaf-area">—</td><td id="leaf-len-px">—</td><td id="leaf-len-cm">—</td><td id="leaf-nodes">—</td><td id="leaf-edges">—</td></tr>
+</tbody>
+</table>
+<p style="font-size:0.85rem;opacity:0.7;margin-top:12px;">
+* Приблизительное значение в см рассчитывается по масштабу калибровки.
+<span id="scale-warning" style="color:var(--warning);">⚠️ Проведите калибровку для точных измерений.</span>
+</p>
 
-  <!-- 🔹 АНАЛИЗ РАСТЕНИЯ -->
-  <div class="block">
-    <h2>🔬 Анализ изображения растения</h2>
+<div id="extra-stats" style="margin-top:20px;padding:12px;background:var(--section-bg);border-radius:8px;">
+<h4 style="margin:0 0 12px;color:var(--accent);">📈 Дополнительные метрики</h4>
+<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px;">
+<div><strong>Всего площадь:</strong> <span id="total-area">—</span> px²</div>
+<div><strong>Всего длина:</strong> <span id="total-length">—</span> px</div>
+<div><strong>Всего узлов:</strong> <span id="total-nodes">—</span></div>
+<div><strong>Всего рёбер:</strong> <span id="total-edges">—</span></div>
+<div><strong>Время обработки:</strong> <span id="proc-time">—</span> с</div>
+<div><strong>Модель:</strong> <span id="model-info">—</span></div>
+</div>
+</div>
+</div>
 
-    <div id="drop-zone" class="drop-zone">
-      <h3>📷 Перетащите фото растения сюда или кликните</h3>
-      <p>Поддерживаются: JPG, PNG, WebP</p>
-      <input type="file" accept="image/*" id="plant-file-input" style="display:none">
-    </div>
-
-    <div id="plant-loading" class="loading">⏳ Обработка изображения...</div>
-    <div id="plant-status" class="status"></div>
-
-    <img id="plant-preview" class="preview" alt="Оригинал">
-    <img id="plant-result" class="preview" alt="Результат анализа">
-
-    <div id="stats" class="hidden">
-      <h3 style="color:var(--accent);margin-top:24px;">📊 Результаты анализа</h3>
-      <table>
-        <thead>
-          <tr>
-            <th>Часть</th>
-            <th>Площадь (px²)</th>
-            <th>Длина (px)</th>
-            <th>Длина (см)*</th>
-            <th>Узлов</th>
-            <th>Рёбер</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr>
-            <td><strong>🌿 Корни</strong></td>
-            <td id="root-area">—</td>
-            <td id="root-len-px">—</td>
-            <td id="root-len-cm">—</td>
-            <td id="root-nodes">—</td>
-            <td id="root-edges">—</td>
-          </tr>
-          <tr>
-            <td><strong>🪴 Стебель</strong></td>
-            <td id="stem-area">—</td>
-            <td id="stem-len-px">—</td>
-            <td id="stem-len-cm">—</td>
-            <td id="stem-nodes">—</td>
-            <td id="stem-edges">—</td>
-          </tr>
-          <tr>
-            <td><strong>🍃 Листья</strong></td>
-            <td id="leaf-area">—</td>
-            <td id="leaf-len-px">—</td>
-            <td id="leaf-len-cm">—</td>
-            <td id="leaf-nodes">—</td>
-            <td id="leaf-edges">—</td>
-          </tr>
-        </tbody>
-      </table>
-      <p style="font-size:0.85rem;opacity:0.7;margin-top:12px;">
-        * Приблизительное значение в см рассчитывается по масштабу калибровки. 
-        <span id="scale-warning" style="color:var(--warning);">⚠️ Проведите калибровку для точных измерений.</span>
-      </p>
-      
-      <!-- Дополнительные метрики -->
-      <div id="extra-stats" style="margin-top:20px;padding:12px;background:var(--section-bg);border-radius:8px;">
-        <h4 style="margin:0 0 12px;color:var(--accent);">📈 Дополнительные метрики</h4>
-        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px;">
-          <div><strong>Всего площадь:</strong> <span id="total-area">—</span> px²</div>
-          <div><strong>Всего длина:</strong> <span id="total-length">—</span> px</div>
-          <div><strong>Всего узлов:</strong> <span id="total-nodes">—</span></div>
-          <div><strong>Всего рёбер:</strong> <span id="total-edges">—</span></div>
-          <div><strong>Время обработки:</strong> <span id="proc-time">—</span> с</div>
-          <div><strong>Модель:</strong> <span id="model-info">—</span></div>
-        </div>
-      </div>
-    </div>
-
-    <div style="text-align:center;margin-top:20px;">
-      <button id="analyze-btn" onclick="analyzePlant()">🔍 Запустить анализ</button>
-      <button id="reset-btn" class="secondary hidden" onclick="resetAnalysis()">🔄 Новое фото</button>
-      <button class="secondary" onclick="exportResults()">📥 Экспорт результатов</button>
-    </div>
-  </div>
+<div style="text-align:center;margin-top:20px;">
+<button id="analyze-btn" onclick="analyzePlant()">🔍 Запустить анализ</button>
+<button id="reset-btn" class="secondary hidden" onclick="resetAnalysis()">🔄 Новое фото</button>
+<button class="secondary" onclick="exportResults()">📥 Экспорт результатов</button>
+</div>
+</div>
 </div>
 
 <script>
@@ -736,403 +586,374 @@ let lastAnalysisResult = null;
 
 // ================= UTILS =================
 function $(id) { return document.getElementById(id); }
-function $$(selector) { return document.querySelectorAll(selector); }
-
 function showPreview(file, imgId) {
-  const reader = new FileReader();
-  reader.onload = e => {
-    const img = $(imgId);
-    img.src = e.target.result;
-    img.classList.add('show');
-  };
-  reader.readAsDataURL(file);
+    const reader = new FileReader();
+    reader.onload = e => {
+        const img = $(imgId);
+        img.src = e.target.result;
+        img.classList.add('show');
+    };
+    reader.readAsDataURL(file);
 }
-
 function showStatus(elId, message, type) {
-  const el = $(elId);
-  el.textContent = message;
-  el.className = `status show ${type}`;
+    const el = $(elId);
+    el.textContent = message;
+    el.className = `status show ${type}`;
 }
-
 function hideStatus(elId) {
-  const el = $(elId);
-  el.className = 'status hidden';
-  el.textContent = '';
+    const el = $(elId);
+    el.className = 'status hidden';
+    el.textContent = '';
 }
-
 function toggleLoading(elId, show) {
-  $(elId).style.display = show ? 'block' : 'none';
+    $(elId).style.display = show ? 'block' : 'none';
 }
-
 function toggleElement(id, show) {
-  const el = $(id);
-  if (show) el.classList.remove('hidden');
-  else el.classList.add('hidden');
+    const el = $(id);
+    if (show) el.classList.remove('hidden');
+    else el.classList.add('hidden');
 }
-
 function toggleCollapsible(header) {
-  header.classList.toggle('active');
-  const content = header.nextElementSibling;
-  content.classList.toggle('show');
+    header.classList.toggle('active');
+    const content = header.nextElementSibling;
+    content.classList.toggle('show');
 }
-
 function updateScaleDisplay(pixelsPerMm, rms = null) {
-  if (pixelsPerMm && pixelsPerMm > 0) {
-    globalPixelsPerMm = pixelsPerMm;
-    $('calib-ppmm').textContent = pixelsPerMm.toFixed(3);
-    $('calib-mmpx').textContent = (1 / pixelsPerMm).toFixed(4);
-    if (rms !== null) $('calib-rms').textContent = rms.toFixed(4);
-    $('calib-scale-info').classList.add('show');
-    $('scale-warning').classList.add('hidden');
-    console.log(`📏 Масштаб: ${pixelsPerMm.toFixed(3)} px/mm, RMS: ${rms?.toFixed(4)}`);
-  }
+    if (pixelsPerMm && pixelsPerMm > 0) {
+        globalPixelsPerMm = pixelsPerMm;
+        $('calib-ppmm').textContent = pixelsPerMm.toFixed(3);
+        $('calib-mmpx').textContent = (1 / pixelsPerMm).toFixed(4);
+        if (rms !== null) $('calib-rms').textContent = rms.toFixed(4);
+        $('calib-scale-info').classList.add('show');
+        $('scale-warning').classList.add('hidden');
+        console.log(`📏 Масштаб: ${pixelsPerMm.toFixed(3)} px/mm, RMS: ${rms?.toFixed(4)}`);
+    }
 }
-
 function pxToCm(px) {
-  if (!globalPixelsPerMm || globalPixelsPerMm <= 0) return null;
-  return (px / globalPixelsPerMm / 10).toFixed(2);
+    if (!globalPixelsPerMm || globalPixelsPerMm <= 0) return null;
+    return (px / globalPixelsPerMm / 10).toFixed(2);
 }
 
 // ================= CALIBRATION =================
 function resetCalibration() {
-  $('calib-file-input').value = '';
-  $('calib-result-img').classList.remove('show');
-  $('calib-result-img').src = '';
-  hideStatus('calib-status');
-  toggleLoading('calib-loading', false);
-  $('calib-scale-info').classList.remove('show');
-  $('calib-drop-zone').classList.remove('hidden');
+    $('calib-file-input').value = '';
+    $('calib-result-img').classList.remove('show');
+    $('calib-result-img').src = '';
+    hideStatus('calib-status');
+    toggleLoading('calib-loading', false);
+    $('calib-scale-info').classList.remove('show');
 }
 
 async function runSingleCalibration() {
-  const fileInput = $('calib-file-input');
-  const file = fileInput.files[0];
-
-  if (!file || !file.type.startsWith('image/')) {
-    showStatus('calib-status', '⚠️ Выберите изображение шахматной доски (JPG/PNG)', 'error');
-    return;
-  }
-
-  toggleLoading('calib-loading', true);
-  hideStatus('calib-status');
-  $('calib-result-img').classList.remove('show');
-  $('calib-scale-info').classList.remove('show');
-
-  const formData = new FormData();
-  formData.append('file', file);
-  formData.append('square_size_mm', $('square-size-mm').value || '25.0');
-  
-  // Вычисляем внутренние углы из количества квадратов
-  const cols = parseInt($('chessboard-cols').value) || 8;
-  const rows = parseInt($('chessboard-rows').value) || 5;
-  formData.append('chessboard_cols', (cols - 1).toString());
-  formData.append('chessboard_rows', (rows - 1).toString());
-  
-  // Параметры алгоритма
-  formData.append('calib_flags', $('calib-flags').value || 'fix_k3_k4_k5');
-  formData.append('calib_alpha', $('calib-alpha').value || '1.0');
-
-  console.log(`📐 Шахматка: ${cols}×${rows} квадратов → ${cols-1}×${rows-1} углов`);
-
-  try {
-    const res = await fetch(`${SERVER}/calibrate-single/`, {
-      method: 'POST',
-      body: formData
-    });
-
-    if (!res.ok) throw new Error(`HTTP ${res.status}: ${res.statusText}`);
-
-    const data = await res.json();
-    toggleLoading('calib-loading', false);
-
-    if (data.status === 'ok') {
-      showStatus('calib-status', `✅ ${data.message || 'Калибровка успешна!'}`, 'success');
-      
-      if (data.pixels_per_mm) {
-        updateScaleDisplay(data.pixels_per_mm, data.rms_error);
-      }
-      
-      if (data.visualization_url) {
-        const imgUrl = SERVER + data.visualization_url + '?t=' + Date.now();
-        $('calib-result-img').src = imgUrl;
-        $('calib-result-img').classList.add('show');
-      }
-    } else {
-      showStatus('calib-status', `❌ Ошибка: ${data.message || data.error || 'Неизвестная ошибка'}`, 'error');
+    const fileInput = $('calib-file-input');
+    const file = fileInput.files[0];
+    
+    // 🔹 Проверка файла
+    if (!file || !file.type.startsWith('image/')) {
+        showStatus('calib-status', '⚠️ Выберите изображение шахматной доски (JPG/PNG)', 'error');
+        return;
     }
-  } catch (err) {
-    toggleLoading('calib-loading', false);
-    showStatus('calib-status', `❌ Ошибка связи: ${err.message}`, 'error');
-    console.error('Calibration error:', err);
-  }
+    
+    toggleLoading('calib-loading', true);
+    hideStatus('calib-status');
+    $('calib-result-img').classList.remove('show');
+    $('calib-scale-info').classList.remove('show');
+    
+    const formData = new FormData();
+    formData.append('file', file);
+    
+    // 🔹 Валидация и парсинг числовых параметров
+    const squareSize = parseFloat($('square-size-mm').value);
+    formData.append('square_size_mm', isNaN(squareSize) || squareSize <= 0 ? '25.0' : squareSize.toString());
+    
+    const cols = parseInt($('chessboard-cols').value);
+    const rows = parseInt($('chessboard-rows').value);
+    // Отправляем количество ВНУТРЕННИХ углов (квадраты - 1)
+    formData.append('chessboard_cols', (isNaN(cols) || cols < 3 ? 7 : cols - 1).toString());
+    formData.append('chessboard_rows', (isNaN(rows) || rows < 3 ? 4 : rows - 1).toString());
+    
+    const calibFlags = $('calib-flags').value;
+    formData.append('calib_flags', calibFlags || 'fix_k3_k4_k5');
+    
+    const calibAlpha = parseFloat($('calib-alpha').value);
+    formData.append('calib_alpha', isNaN(calibAlpha) ? '1.0' : calibAlpha.toString());
+    
+    // 🔹 Отладка: лог отправляемых данных (удалите в продакшене)
+    console.log('📤 Отправка калибровки:', {
+        file: file.name,
+        square_size_mm: formData.get('square_size_mm'),
+        chessboard_cols: formData.get('chessboard_cols'),
+        chessboard_rows: formData.get('chessboard_rows'),
+        calib_flags: formData.get('calib_flags'),
+        calib_alpha: formData.get('calib_alpha')
+    });
+    
+    try {
+        const res = await fetch(`${SERVER}/calibrate-single/`, {
+            method: 'POST',
+            body: formData
+            // 🔹 ВАЖНО: не указывайте headers для FormData — браузер сам установит multipart/form-data с boundary
+        });
+        
+        // 🔹 Подробная обработка ошибок
+        if (!res.ok) {
+            const errorText = await res.text().catch(() => '');
+            console.error('❌ Ответ сервера:', res.status, errorText);
+            throw new Error(`HTTP ${res.status}: ${errorText || res.statusText}`);
+        }
+        
+        const data = await res.json();
+        toggleLoading('calib-loading', false);
+        
+        if (data.status === 'ok') {
+            showStatus('calib-status', `✅ ${data.message || 'Калибровка успешна!'}`, 'success');
+            if (data.pixels_per_mm) {
+                updateScaleDisplay(data.pixels_per_mm, data.rms_error);
+            }
+            if (data.visualization_url) {
+                $('calib-result-img').src = SERVER + data.visualization_url + '?t=' + Date.now();
+                $('calib-result-img').classList.add('show');
+            }
+        } else {
+            showStatus('calib-status', `❌ Ошибка: ${data.message || data.error || 'Неизвестная ошибка'}`, 'error');
+        }
+    } catch (err) {
+        toggleLoading('calib-loading', false);
+        showStatus('calib-status', `❌ Ошибка: ${err.message}`, 'error');
+        console.error('🔥 Calibration error:', err);
+    }
 }
 
 // ================= PLANT ANALYSIS =================
 function resetAnalysis() {
-  $('plant-file-input').value = '';
-  $('plant-preview').classList.remove('show');
-  $('plant-result').classList.remove('show');
-  $('plant-result').src = '';
-  hideStatus('plant-status');
-  toggleLoading('plant-loading', false);
-  toggleElement('stats', false);
-  toggleElement('reset-btn', false);
-  toggleElement('drop-zone', true);
-  toggleElement('analyze-btn', true);
-  
-  // Сброс таблицы
-  ['root','stem','leaf'].forEach(part => {
-    [`${part}-area`, `${part}-len-px`, `${part}-len-cm`, `${part}-nodes`, `${part}-edges`].forEach(id => {
-      $(id).textContent = '—';
+    $('plant-file-input').value = '';
+    $('plant-preview').classList.remove('show');
+    $('plant-result').classList.remove('show');
+    $('plant-result').src = '';
+    hideStatus('plant-status');
+    toggleLoading('plant-loading', false);
+    toggleElement('stats', false);
+    toggleElement('reset-btn', false);
+    toggleElement('drop-zone', true);
+    ['root','stem','leaf'].forEach(part => {
+        [`${part}-area`, `${part}-len-px`, `${part}-len-cm`, `${part}-nodes`, `${part}-edges`].forEach(id => $(id).textContent = '—');
     });
-  });
-  ['total-area','total-length','total-nodes','total-edges','proc-time','model-info'].forEach(id => {
-    $(id).textContent = '—';
-  });
-  lastAnalysisResult = null;
+    ['total-area','total-length','total-nodes','total-edges','proc-time','model-info'].forEach(id => $(id).textContent = '—');
+    lastAnalysisResult = null;
 }
 
 function collectParams() {
-  return {
-    // YOLO
-    YOLO_CONF_ROOT: parseFloat($('YOLO_CONF_ROOT').value) || 0.001,
-    YOLO_CONF_STEM: parseFloat($('YOLO_CONF_STEM').value) || 0.10,
-    YOLO_CONF_LEAF: parseFloat($('YOLO_CONF_LEAF').value) || 0.30,
-    YOLO_IOU_THRESH: parseFloat($('YOLO_IOU_THRESH').value) || 0.45,
-    YOLO_IMG_SIZE: parseInt($('YOLO_IMG_SIZE').value) || 1280,
-    YOLO_MAX_DET: parseInt($('YOLO_MAX_DET').value) || 1000,
-    YOLO_AUGMENT: $('YOLO_AUGMENT').value || 'light',
+    // Получаем размеры YOLO как кортеж [ширина, высота]
+    const imgSizeW = parseInt($('YOLO_IMG_SIZE_W').value) || 2048;
+    const imgSizeH = parseInt($('YOLO_IMG_SIZE_H').value) || 1536;
     
-    // Image preprocessing
-    IMG_MAX_WIDTH: parseInt($('IMG_MAX_WIDTH').value) || 2048,
-    IMG_MAX_HEIGHT: parseInt($('IMG_MAX_HEIGHT').value) || 2048,
-    IMG_INTERPOLATION: $('IMG_INTERPOLATION').value || 'cubic',
-    PREPROC_BLUR: parseInt($('PREPROC_BLUR').value) || 0,
-    PREPROC_CONTRAST: parseFloat($('PREPROC_CONTRAST').value) || 2.0,
-    PREPROC_DENOISE: parseInt($('PREPROC_DENOISE').value) || 0,
-    PREPROC_ADAPTIVE: $('PREPROC_ADAPTIVE').value || 'gaussian',
-    
-    // Skeleton & Graph
-    SKELETON_METHOD: $('SKELETON_METHOD').value || 'zhang',
-    SKELETON_ITER: parseInt($('SKELETON_ITER').value) || 100,
-    GRAPH_CONNECT_RADIUS: parseFloat($('GRAPH_CONNECT_RADIUS').value) || 1.7,
-    GRAPH_MAX_NODES: parseInt($('GRAPH_MAX_NODES').value) || 38000,
-    REMOVE_SMALL_COMP_SIZE: parseInt($('REMOVE_SMALL_COMP_SIZE').value) || 30,
-    GRAPH_PRUNE_BRANCHES: parseInt($('GRAPH_PRUNE_BRANCHES').value) || 5,
-    
-    // Component connection
-    ROOT_CONNECT_MAX_DIST: parseInt($('ROOT_CONNECT_MAX_DIST').value) || 50,
-    ROOT_CONNECT_MIN_DIST: parseFloat($('ROOT_CONNECT_MIN_DIST').value) || 4.0,
-    ROOT_ANCHOR_MAX_DIST: parseInt($('ROOT_ANCHOR_MAX_DIST').value) || 50,
-    ROOT_MIN_SIZE_RATIO: parseFloat($('ROOT_MIN_SIZE_RATIO').value) || 0.1,
-    STEM_LEAF_CONNECT_MAX_DIST: parseInt($('STEM_LEAF_CONNECT_MAX_DIST').value) || 5,
-    STEM_LEAF_CONNECT_MIN_DIST: parseFloat($('STEM_LEAF_CONNECT_MIN_DIST').value) || 1.0,
-    STEM_LEAF_ANGLE_THRESH: parseInt($('STEM_LEAF_ANGLE_THRESH').value) || 45,
-    
-    // Morphology
-    COMBINED_MIN_SIZE: parseInt($('COMBINED_MIN_SIZE').value) || 60,
-    MORPH_KERNEL_SIZE: parseInt($('MORPH_KERNEL_SIZE').value) || 3,
-    MORPH_CLOSE_SIZE: parseInt($('MORPH_CLOSE_SIZE').value) || 0,
-    MORPH_ITER: parseInt($('MORPH_ITER').value) || 1,
-    NOISE_REMOVE_AREA: parseInt($('NOISE_REMOVE_AREA').value) || 20,
-    NOISE_REMOVE_ECCENTRICITY: parseFloat($('NOISE_REMOVE_ECCENTRICITY').value) || 0.99,
-    
-    // Rendering
-    EDGE_THICKNESS: parseInt($('EDGE_THICKNESS').value) || 2,
-    NODE_END_RADIUS: parseInt($('NODE_END_RADIUS').value) || 5,
-    NODE_MID_RADIUS: parseInt($('NODE_MID_RADIUS').value) || 2,
-    DRAW_NODE_LABELS: $('DRAW_NODE_LABELS').value || 'degree',
-    FONT_SIZE: parseInt($('FONT_SIZE').value) || 12,
-    DRAW_BOUNDING_BOX: $('DRAW_BOUNDING_BOX').value || 'yolo',
-    OUTPUT_FORMAT: $('OUTPUT_FORMAT').value || 'png',
-    
-    // Advanced
-    MAX_WORKERS: parseInt($('MAX_WORKERS').value) || 4,
-    BATCH_SIZE: parseInt($('BATCH_SIZE').value) || 1,
-    USE_GPU: $('USE_GPU').value || 'auto',
-    DEBUG_MODE: $('DEBUG_MODE').value || 'off',
-    SAVE_INTERMEDIATE: $('SAVE_INTERMEDIATE').value || 'all',
-    LOG_LEVEL: $('LOG_LEVEL').value || 'debug',
-    EXPORT_FORMAT: $('EXPORT_FORMAT').value || 'json',
-    EXPORT_GRAPHML: $('EXPORT_GRAPHML').value === 'true',
-    EXPORT_COORDS: $('EXPORT_COORDS').value === 'true',
-    
-    // Scale
-    pixels_per_mm: globalPixelsPerMm || null
-  };
+    return {
+        // YOLO — параметры как в локальном скрипте
+        YOLO_CONF_ROOT: parseFloat($('YOLO_CONF_ROOT').value) || 0.01,
+        YOLO_CONF_STEM: parseFloat($('YOLO_CONF_STEM').value) || 0.10,
+        YOLO_CONF_LEAF: parseFloat($('YOLO_CONF_LEAF').value) || 0.30,
+        YOLO_IOU: parseFloat($('YOLO_IOU_THRESH').value) || 0.50,
+        YOLO_IMG_SIZE: [imgSizeW, imgSizeH],  // ← кортеж, как в локальном скрипте
+        YOLO_MAX_DET: parseInt($('YOLO_MAX_DET').value) || 1000,
+        YOLO_RETINA_MASKS: $('YOLO_RETINA_MASKS').value === 'true',
+        YOLO_AGNOSTIC_NMS: $('YOLO_AGNOSTIC_NMS').value === 'true',
+        
+        // Изображение
+        IMG_MAX_WIDTH: parseInt($('IMG_MAX_WIDTH').value) || 2048,
+        IMG_MAX_HEIGHT: parseInt($('IMG_MAX_HEIGHT').value) || 1536,
+        IMG_INTERPOLATION: $('IMG_INTERPOLATION').value || 'cubic',
+        
+        // Предобработка
+        PREPROC_BLUR: parseInt($('PREPROC_BLUR').value) || 0,
+        PREPROC_CONTRAST: parseFloat($('PREPROC_CONTRAST').value) || 2.0,
+        PREPROC_DENOISE: parseInt($('PREPROC_DENOISE').value) || 0,
+        
+        // Граф
+        GRAPH_CONNECT_RADIUS: parseFloat($('GRAPH_CONNECT_RADIUS').value) || 1.7,
+        GRAPH_MAX_NODES: parseInt($('GRAPH_MAX_NODES').value) || 38000,
+        REMOVE_SMALL_COMP_SIZE: parseInt($('REMOVE_SMALL_COMP_SIZE').value) || 30,
+        
+        // Соединение компонент
+        ROOT_CONNECT_MAX_DIST: parseInt($('ROOT_CONNECT_MAX_DIST').value) || 60,
+        ROOT_CONNECT_MIN_DIST: parseFloat($('ROOT_CONNECT_MIN_DIST').value) || 4.0,
+        ROOT_ANCHOR_MAX_DIST: parseInt($('ROOT_ANCHOR_MAX_DIST').value) || 10,
+        STEM_LEAF_CONNECT_MAX_DIST: parseInt($('STEM_LEAF_CONNECT_MAX_DIST').value) || 5,
+        STEM_LEAF_CONNECT_MIN_DIST: parseFloat($('STEM_LEAF_CONNECT_MIN_DIST').value) || 1.0,
+        
+        // Морфология
+        COMBINED_MIN_SIZE: parseInt($('COMBINED_MIN_SIZE').value) || 60,
+        MORPH_KERNEL_SIZE: parseInt($('MORPH_KERNEL_SIZE').value) || 3,
+        MORPH_CLOSE_SIZE: parseInt($('MORPH_CLOSE_SIZE').value) || 0,
+        MORPH_ITER: parseInt($('MORPH_ITER').value) || 1,
+        NOISE_REMOVE_ECCENTRICITY: parseFloat($('NOISE_REMOVE_ECCENTRICITY').value) || 0.99,
+        
+        // Отрисовка
+        EDGE_THICKNESS: parseInt($('EDGE_THICKNESS').value) || 2,
+        NODE_END_RADIUS_STEM_LEAF: parseInt($('NODE_END_RADIUS_SL').value) || 5,
+        NODE_MID_RADIUS_STEM_LEAF: parseInt($('NODE_MID_RADIUS_SL').value) || 2,
+        NODE_END_RADIUS_ROOT: parseInt($('NODE_END_RADIUS_ROOT').value) || 4,
+        NODE_MID_RADIUS_ROOT: parseInt($('NODE_MID_RADIUS_ROOT').value) || 2,
+        DRAW_NODE_LABELS: $('DRAW_NODE_LABELS').value || 'none',
+        FONT_SIZE: parseFloat($('FONT_SIZE').value) || 0.7,
+        OUTPUT_FORMAT: $('OUTPUT_FORMAT').value || 'jpg',
+        
+        // Прочее
+        USE_GPU: $('USE_GPU').value || 'auto',
+        SAVE_DEBUG_STAGES: $('SAVE_DEBUG_STAGES').value === 'true',
+        
+        // Масштаб
+        pixels_per_mm: globalPixelsPerMm || null
+    };
 }
 
 async function analyzePlant() {
-  const fileInput = $('plant-file-input');
-  const file = fileInput.files[0];
-  
-  if (!file || !file.type.startsWith('image/')) {
-    showStatus('plant-status', '⚠️ Выберите изображение растения', 'warning');
-    return;
-  }
-
-  const startTime = performance.now();
-  showPreview(file, 'plant-preview');
-  
-  toggleLoading('plant-loading', true);
-  hideStatus('plant-status');
-  toggleElement('drop-zone', false);
-  toggleElement('stats', false);
-  toggleElement('reset-btn', false);
-
-  const formData = new FormData();
-  formData.append('file', file);
-  formData.append('params', JSON.stringify(collectParams()));
-
-  try {
-    const res = await fetch(`${SERVER}/analyze/`, {
-      method: 'POST',
-      body: formData
-    });
-
-    if (!res.ok) {
-      const errText = await res.text().catch(() => '');
-      throw new Error(`HTTP ${res.status}: ${errText || res.statusText}`);
+    const fileInput = $('plant-file-input');
+    const file = fileInput.files[0];
+    if (!file || !file.type.startsWith('image/')) {
+        showStatus('plant-status', '⚠️ Выберите изображение растения', 'warning');
+        return;
     }
-
-    const data = await res.json();
-    const endTime = performance.now();
-    toggleLoading('plant-loading', false);
-
-    if (data.error || data.status === 'error') {
-      showStatus('plant-status', `❌ ${data.error || data.message || 'Ошибка сервера'}`, 'error');
-      toggleElement('drop-zone', true);
-      return;
-    }
-
-    // Сохраняем результат для экспорта
-    lastAnalysisResult = data;
-
-    // Показываем результат
-    if (data.image_url) {
-      $('plant-result').src = SERVER + data.image_url + '?t=' + Date.now();
-      $('plant-result').classList.add('show');
-    }
-
-    // Заполняем статистику
-    const s = data.stats || {};
-    const parts = ['root', 'stem', 'leaf'];
     
-    parts.forEach(part => {
-      const area = s.areas?.[part];
-      $(`${part}-area`).textContent = area ? area.toLocaleString('ru-RU') : '—';
-      
-      const lenPx = s.lengths_px?.[part];
-      $(`${part}-len-px`).textContent = lenPx ? lenPx.toLocaleString('ru-RU') : '—';
-      
-      const lenCm = globalPixelsPerMm && lenPx ? pxToCm(lenPx) : null;
-      $(`${part}-len-cm`).textContent = lenCm ? `${lenCm}` : '—';
-      
-      const nodes = s.graph_stats?.[part]?.nodes;
-      $(`${part}-nodes`).textContent = nodes !== undefined ? nodes.toLocaleString('ru-RU') : '—';
-      
-      const edges = s.graph_stats?.[part]?.edges;
-      $(`${part}-edges`).textContent = edges !== undefined ? edges.toLocaleString('ru-RU') : '—';
-    });
-
-    // Общие метрики
-    $('total-area').textContent = s.total_area_px?.toLocaleString('ru-RU') || '—';
-    $('total-length').textContent = s.total_length_px?.toLocaleString('ru-RU') || '—';
-    $('total-nodes').textContent = s.total_nodes?.toLocaleString('ru-RU') || '—';
-    $('total-edges').textContent = s.total_edges?.toLocaleString('ru-RU') || '—';
-    $('proc-time').textContent = ((endTime - startTime) / 1000).toFixed(2);
-    $('model-info').textContent = s.model_loaded ? 'YOLOv8 ✅' : 'Не загружена ❌';
-
-    toggleElement('stats', true);
-    toggleElement('reset-btn', true);
-
-  } catch (err) {
-    toggleLoading('plant-loading', false);
-    showStatus('plant-status', `❌ Ошибка: ${err.message}`, 'error');
-    toggleElement('drop-zone', true);
-    console.error('Analysis error:', err);
-  }
+    const startTime = performance.now();
+    showPreview(file, 'plant-preview');
+    toggleLoading('plant-loading', true);
+    hideStatus('plant-status');
+    toggleElement('drop-zone', false);
+    toggleElement('stats', false);
+    toggleElement('reset-btn', false);
+    
+    const formData = new FormData();
+    formData.append('file', file);
+    formData.append('params', JSON.stringify(collectParams()));
+    
+    try {
+        const res = await fetch(`${SERVER}/analyze/`, { method: 'POST', body: formData });
+        if (!res.ok) {
+            const errText = await res.text().catch(() => '');
+            throw new Error(`HTTP ${res.status}: ${errText || res.statusText}`);
+        }
+        const data = await res.json();
+        const endTime = performance.now();
+        toggleLoading('plant-loading', false);
+        
+        if (data.error || data.status === 'error') {
+            showStatus('plant-status', `❌ ${data.error || data.message || 'Ошибка сервера'}`, 'error');
+            toggleElement('drop-zone', true);
+            return;
+        }
+        
+        lastAnalysisResult = data;
+        
+        if (data.image_url) {
+            $('plant-result').src = SERVER + data.image_url + '?t=' + Date.now();
+            $('plant-result').classList.add('show');
+        }
+        
+        const s = data.stats || {};
+        const parts = ['root', 'stem', 'leaf'];
+        parts.forEach(part => {
+            const area = s.areas?.[part];
+            $(`${part}-area`).textContent = area ? area.toLocaleString('ru-RU') : '—';
+            const lenPx = s.lengths_px?.[part];
+            $(`${part}-len-px`).textContent = lenPx ? lenPx.toLocaleString('ru-RU') : '—';
+            const lenCm = globalPixelsPerMm && lenPx ? pxToCm(lenPx) : null;
+            $(`${part}-len-cm`).textContent = lenCm ? `${lenCm}` : '—';
+            const nodes = s.graph_stats?.[part]?.nodes;
+            $(`${part}-nodes`).textContent = nodes !== undefined ? nodes.toLocaleString('ru-RU') : '—';
+            const edges = s.graph_stats?.[part]?.edges;
+            $(`${part}-edges`).textContent = edges !== undefined ? edges.toLocaleString('ru-RU') : '—';
+        });
+        
+        $('total-area').textContent = s.total_area_px?.toLocaleString('ru-RU') || '—';
+        $('total-length').textContent = s.total_length_px?.toLocaleString('ru-RU') || '—';
+        $('total-nodes').textContent = s.total_nodes?.toLocaleString('ru-RU') || '—';
+        $('total-edges').textContent = s.total_edges?.toLocaleString('ru-RU') || '—';
+        $('proc-time').textContent = ((endTime - startTime) / 1000).toFixed(2);
+        $('model-info').textContent = s.model_loaded ? 'YOLOv8 ✅' : 'Не загружена ❌';
+        
+        toggleElement('stats', true);
+        toggleElement('reset-btn', true);
+        
+    } catch (err) {
+        toggleLoading('plant-loading', false);
+        showStatus('plant-status', `❌ Ошибка: ${err.message}`, 'error');
+        toggleElement('drop-zone', true);
+        console.error('Analysis error:', err);
+    }
 }
 
 function exportResults() {
-  if (!lastAnalysisResult) {
-    showStatus('plant-status', '⚠️ Сначала проведите анализ', 'warning');
-    return;
-  }
-  
-  const format = $('EXPORT_FORMAT').value || 'json';
-  const blob = new Blob([JSON.stringify(lastAnalysisResult, null, 2)], {type: 'application/json'});
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = `plant_analysis_${new Date().toISOString().slice(0,10)}.json`;
-  a.click();
-  URL.revokeObjectURL(url);
-  
-  showStatus('plant-status', '✅ Результаты экспортированы', 'success');
+    if (!lastAnalysisResult) {
+        showStatus('plant-status', '⚠️ Сначала проведите анализ', 'warning');
+        return;
+    }
+    const blob = new Blob([JSON.stringify(lastAnalysisResult, null, 2)], {type: 'application/json'});
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `plant_analysis_${new Date().toISOString().slice(0,10)}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+    showStatus('plant-status', '✅ Результаты экспортированы', 'success');
 }
 
 // ================= EVENT LISTENERS =================
 document.addEventListener('DOMContentLoaded', () => {
-  
-  // Calibration drop zone
-  const calibZone = $('calib-drop-zone');
-  const calibInput = $('calib-file-input');
-  
-  calibZone.addEventListener('click', () => calibInput.click());
-  calibInput.addEventListener('change', (e) => {
-    if (e.target.files[0]) { showPreview(e.target.files[0], 'calib-result-img'); hideStatus('calib-status'); }
-  });
-  ['dragenter', 'dragover'].forEach(evt => 
-    calibZone.addEventListener(evt, (e) => { e.preventDefault(); e.stopPropagation(); calibZone.classList.add('active'); })
-  );
-  ['dragleave', 'drop'].forEach(evt => 
-    calibZone.addEventListener(evt, (e) => { e.preventDefault(); e.stopPropagation(); calibZone.classList.remove('active'); })
-  );
-  calibZone.addEventListener('drop', (e) => {
-    const file = e.dataTransfer.files[0];
-    if (file && file.type.startsWith('image/')) {
-      calibInput.files = e.dataTransfer.files;
-      showPreview(file, 'calib-result-img');
-      hideStatus('calib-status');
-    }
-  });
-  
-  // Plant analysis drop zone
-  const plantZone = $('drop-zone');
-  const plantInput = $('plant-file-input');
-  
-  plantZone.addEventListener('click', () => plantInput.click());
-  plantInput.addEventListener('change', (e) => {
-    if (e.target.files[0]) { showPreview(e.target.files[0], 'plant-preview'); hideStatus('plant-status'); }
-  });
-  ['dragenter', 'dragover'].forEach(evt => 
-    plantZone.addEventListener(evt, (e) => { e.preventDefault(); e.stopPropagation(); plantZone.classList.add('active'); })
-  );
-  ['dragleave', 'drop'].forEach(evt => 
-    plantZone.addEventListener(evt, (e) => { e.preventDefault(); e.stopPropagation(); plantZone.classList.remove('active'); })
-  );
-  plantZone.addEventListener('drop', (e) => {
-    const file = e.dataTransfer.files[0];
-    if (file && file.type.startsWith('image/')) {
-      plantInput.files = e.dataTransfer.files;
-      showPreview(file, 'plant-preview');
-      hideStatus('plant-status');
-    }
-  });
-  
-  // Keyboard shortcuts
-  document.addEventListener('keydown', (e) => {
-    if (e.key === 'Escape') { resetCalibration(); resetAnalysis(); }
-    if (e.ctrlKey && e.key === 'Enter') {
-      if (document.activeElement?.closest('.block')?.id === 'calibration-block') {
-        runSingleCalibration();
-      } else {
-        analyzePlant();
-      }
-    }
-  });
-  
+    // Calibration drop zone
+    const calibZone = $('calib-drop-zone');
+    const calibInput = $('calib-file-input');
+    calibZone.addEventListener('click', () => calibInput.click());
+    calibInput.addEventListener('change', (e) => {
+        if (e.target.files[0]) { showPreview(e.target.files[0], 'calib-result-img'); hideStatus('calib-status'); }
+    });
+    ['dragenter', 'dragover'].forEach(evt =>
+        calibZone.addEventListener(evt, (e) => { e.preventDefault(); e.stopPropagation(); calibZone.classList.add('active'); })
+    );
+    ['dragleave', 'drop'].forEach(evt =>
+        calibZone.addEventListener(evt, (e) => { e.preventDefault(); e.stopPropagation(); calibZone.classList.remove('active'); })
+    );
+    calibZone.addEventListener('drop', (e) => {
+        const file = e.dataTransfer.files[0];
+        if (file && file.type.startsWith('image/')) {
+            calibInput.files = e.dataTransfer.files;
+            showPreview(file, 'calib-result-img');
+            hideStatus('calib-status');
+        }
+    });
+    
+    // Plant analysis drop zone
+    const plantZone = $('drop-zone');
+    const plantInput = $('plant-file-input');
+    plantZone.addEventListener('click', () => plantInput.click());
+    plantInput.addEventListener('change', (e) => {
+        if (e.target.files[0]) { showPreview(e.target.files[0], 'plant-preview'); hideStatus('plant-status'); }
+    });
+    ['dragenter', 'dragover'].forEach(evt =>
+        plantZone.addEventListener(evt, (e) => { e.preventDefault(); e.stopPropagation(); plantZone.classList.add('active'); })
+    );
+    ['dragleave', 'drop'].forEach(evt =>
+        plantZone.addEventListener(evt, (e) => { e.preventDefault(); e.stopPropagation(); plantZone.classList.remove('active'); })
+    );
+    plantZone.addEventListener('drop', (e) => {
+        const file = e.dataTransfer.files[0];
+        if (file && file.type.startsWith('image/')) {
+            plantInput.files = e.dataTransfer.files;
+            showPreview(file, 'plant-preview');
+            hideStatus('plant-status');
+        }
+    });
+    
+    // Keyboard shortcuts
+    document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape') { resetCalibration(); resetAnalysis(); }
+        if (e.ctrlKey && e.key === 'Enter') {
+            if (document.activeElement?.closest('.block')?.id === 'calibration-block') {
+                runSingleCalibration();
+            } else {
+                analyzePlant();
+            }
+        }
+    });
 });
 </script>
 </body>
